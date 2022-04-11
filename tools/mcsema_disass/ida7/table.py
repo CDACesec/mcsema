@@ -85,7 +85,7 @@ def get_default_jump_table_entries(builder):
   recognize a jump table. If IDA doesn't recognize the table, then we
   say that there are 0 entries, but we also return what we have inferred
   to be the first entry."""
-  si = ida_nalt.get_switch_info(builder.jump_ea)
+  si = ida_nalt.get_switch_info(builder.jump_ea) 
   if si:
     next_addr = builder.table_ea
     for i in xrange(si.get_jtable_size()):
@@ -326,7 +326,7 @@ def get_manual_jump_table_reader(builder):
   """Scan backwards looking for something that looks like a jump table,
   even if it's not explicitly referenced in the current instruction.
   This handles the case where we see something like a `mov` or an `lea`
-  of the table base address that happens before the actual `jmp`."""
+  of the table base address that happens before the actual `jmp`.""" 
   ret = False
   next_inst_ea = builder.jump_ea
   found_ref_eas = set()
@@ -439,7 +439,7 @@ def get_manual_jump_table_reader(builder):
 def get_jump_table_reader(builder):
   """Returns the size of a jump table entry, as well as a reader function
   that can extract entries."""
-  si = ida_nalt.get_switch_info(builder.jump_ea)
+  si = ida_nalt.get_switch_info(builder.jump_ea) 
   if si:
     return get_ida_jump_table_reader(builder, si)
 
@@ -477,7 +477,7 @@ def get_jump_table(inst, binary_is_pie=False):
 
   builder = JumpTableBuilder(inst, binary_is_pie)
 
-  if not get_jump_table_reader(builder):
+  if not get_jump_table_reader(builder): 
     _NOT_A_JMP_THROUGH_TABLE.add(builder.jump_ea)
     return None
 
@@ -523,7 +523,7 @@ def is_jump_table_entry(ea):
 def get_jump_table_from_entry(entry_ea):
   """Returns a `JumpTable` """
   global _FIRST_JUMP_TABLE_ENTRY, _JUMP_TABLE_ENTRY
-  if entry_ea not in _FIRST_JUMP_TABLE_ENTRY:
+  if entry_ea not in _FIRST_JUMP_TABLE_ENTRY: 
     return None
-  table_ea = _FIRST_JUMP_TABLE_ENTRY[entry_ea]
+  table_ea = _FIRST_JUMP_TABLE_ENTRY[entry_ea] 
   return _JUMP_TABLE_ENTRY[table_ea]

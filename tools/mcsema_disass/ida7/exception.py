@@ -188,6 +188,7 @@ def format_lsda_actions(action_tbl, act_ea, type_addr, type_enc, act_id):
   return action_list
 
 def create_block_entries(start_ea, heads):
+  DEBUG("DI called from create_block_entries,exception file")
   index = 0
   block_set = set()
   for entry in heads:
@@ -206,6 +207,7 @@ def create_block_entries(start_ea, heads):
     index = index + 1
 
   _EXCEPTION_BLOCKS_EAS[start_ea] = block_set
+
 
 def format_lsda(lsda_ptr, start_ea, range = None,  sjlj = False):
   """  Recover the language specific data area

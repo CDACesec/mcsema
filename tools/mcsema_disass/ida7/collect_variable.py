@@ -25,6 +25,10 @@ import traceback
 import collections
 import itertools
 import pprint
+import ida_ua
+import ida_bytes
+import inspect
+
 
 # Bring in utility libraries.
 from util import *
@@ -32,6 +36,9 @@ from table import *
 from flow import *
 from refs import *
 from segment import *
+
+
+
 
 OPND_WRITE_FLAGS = {
   0: idaapi.CF_CHG1,
@@ -87,7 +94,7 @@ OPND_DTYPE_TO_SIZE = {
 
 def get_native_size():
   info = idaapi.get_inf_structure()
-  if info.is_64bit():
+  if info.is_64bit(): 
     return 8
   elif info.is_32bit():
     return 4
@@ -96,10 +103,10 @@ def get_native_size():
     
 def get_register_name(reg_id, size=None):
   if size is None:
-    size = get_native_size()
+    size = get_native_size() 
   return idaapi.get_reg_name(reg_id, size)
 
-def get_register_info(reg_name):
+def get_register_info(reg_name): 
   ri = idaapi.reg_info_t()
   success = idaapi.parse_reg_name(reg_name, ri)
   return ri
@@ -351,6 +358,7 @@ if idaapi.get_inf_structure().is_64bit():
   _trashed_regs = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"]
   _mark_args = _mark_function_args_sysv64
   _translate_reg = _translate_reg_64
+
 elif idaapi.get_inf_structure().is_32bit():
   _signed_from_unsigned = _signed_from_unsigned32
   _base_ptr = "ebp"
@@ -526,7 +534,7 @@ def _process_instruction(inst_ea, func_variable):
               func_variable["stack_vars"][start_]["reads"].append({"ea" :inst_ea, "offset" : var_offset})
               func_variable["stack_vars"][start_]["safe"] = True
 
-def _process_basic_block(f_ea, block_ea, func_variable):
+def _process_basic_block(f_ea, block_ea, func_variable): 
   inst_eas, succ_eas = analyse_block(f_ea, block_ea, True)
   for inst_ea in inst_eas:
     _process_instruction(inst_ea, func_variable)
@@ -594,7 +602,7 @@ def build_stack_variable(func_ea):
 def is_instruction_unsafe(inst_ea, func_ea):
   """ Returns `True` if the instruction reads from the base ptr and loads
       the value to the other registers.
-  """
+  """ 
   _uses_bp = False
   insn = Instruction(inst_ea)
 
@@ -617,14 +625,15 @@ def is_instruction_unsafe(inst_ea, func_ea):
 def is_function_unsafe(func_ea, blockset):
   """ Returns `True` if the function uses bp and it might access the stack variable
       indirectly using the base pointer.
-  """
+  """   
   if not (idc.GetFunctionFlags(func_ea) & idc.FUNC_FRAME):
     return False
 
   for block_ea in blockset:
     inst_eas, succ_eas = analyse_block(func_ea, block_ea, True)
     for inst_ea in inst_eas:
-      if is_instruction_unsafe(inst_ea, func_ea):
+      if is_instruction_unsafe(inst_ea, func_ea): 
+
         return True
   return False
 

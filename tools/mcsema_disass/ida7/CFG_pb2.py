@@ -18,7 +18,7 @@ _sym_db = _symbol_database.Default()
 DESCRIPTOR = _descriptor.FileDescriptor(
   name='CFG.proto',
   package='mcsema',
-  serialized_pb=_b('\n\tCFG.proto\x12\x06mcsema\"\xaf\x03\n\rCodeReference\x12\x35\n\x0btarget_type\x18\x01 \x02(\x0e\x32 .mcsema.CodeReference.TargetType\x12\x37\n\x0coperand_type\x18\x02 \x02(\x0e\x32!.mcsema.CodeReference.OperandType\x12\x30\n\x08location\x18\x03 \x02(\x0e\x32\x1e.mcsema.CodeReference.Location\x12\n\n\x02\x65\x61\x18\x04 \x02(\x03\x12\x0c\n\x04mask\x18\x05 \x01(\x03\x12\x0c\n\x04name\x18\x06 \x01(\t\",\n\nTargetType\x12\x0e\n\nCodeTarget\x10\x00\x12\x0e\n\nDataTarget\x10\x01\"~\n\x0bOperandType\x12\x14\n\x10ImmediateOperand\x10\x00\x12\x11\n\rMemoryOperand\x10\x01\x12\x1d\n\x19MemoryDisplacementOperand\x10\x02\x12\x16\n\x12\x43ontrolFlowOperand\x10\x03\x12\x0f\n\x0bOffsetTable\x10\x04\"&\n\x08Location\x12\x0c\n\x08Internal\x10\x00\x12\x0c\n\x08\x45xternal\x10\x01\"u\n\x0bInstruction\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\r\n\x05\x62ytes\x18\x02 \x02(\x0c\x12$\n\x05xrefs\x18\x03 \x03(\x0b\x32\x15.mcsema.CodeReference\x12\x16\n\x0elocal_noreturn\x18\x04 \x01(\x08\x12\r\n\x05lp_ea\x18\x05 \x01(\x04\"U\n\x05\x42lock\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12)\n\x0cinstructions\x18\x02 \x03(\x0b\x32\x13.mcsema.Instruction\x12\x15\n\rsuccessor_eas\x18\x03 \x03(\x03\"\xaf\x01\n\x08\x46unction\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x1d\n\x06\x62locks\x18\x02 \x03(\x0b\x32\r.mcsema.Block\x12\x15\n\ris_entrypoint\x18\x03 \x02(\x08\x12\x0c\n\x04name\x18\x04 \x01(\t\x12)\n\nstack_vars\x18\x05 \x03(\x0b\x32\x15.mcsema.StackVariable\x12(\n\x08\x65h_frame\x18\x06 \x03(\x0b\x32\x16.mcsema.ExceptionFrame\"\x90\x02\n\x10\x45xternalFunction\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\n\n\x02\x65\x61\x18\x02 \x02(\x03\x12\x36\n\x02\x63\x63\x18\x03 \x02(\x0e\x32*.mcsema.ExternalFunction.CallingConvention\x12\x12\n\nhas_return\x18\x04 \x02(\x08\x12\x11\n\tno_return\x18\x05 \x02(\x08\x12\x16\n\x0e\x61rgument_count\x18\x06 \x02(\x05\x12\x0f\n\x07is_weak\x18\x07 \x02(\x08\x12\x11\n\tsignature\x18\x08 \x01(\t\"G\n\x11\x43\x61llingConvention\x12\x11\n\rCallerCleanup\x10\x00\x12\x11\n\rCalleeCleanup\x10\x01\x12\x0c\n\x08\x46\x61stCall\x10\x02\"d\n\x10\x45xternalVariable\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\n\n\x02\x65\x61\x18\x02 \x02(\x03\x12\x0c\n\x04size\x18\x03 \x02(\x05\x12\x0f\n\x07is_weak\x18\x04 \x02(\x08\x12\x17\n\x0fis_thread_local\x18\x05 \x02(\x08\"\xe7\x01\n\rDataReference\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\r\n\x05width\x18\x02 \x02(\x05\x12\x11\n\ttarget_ea\x18\x04 \x02(\x03\x12\x13\n\x0btarget_name\x18\x05 \x02(\t\x12\x16\n\x0etarget_is_code\x18\x06 \x02(\x08\x12@\n\x11target_fixup_kind\x18\x08 \x02(\x0e\x32%.mcsema.DataReference.TargetFixupKind\"9\n\x0fTargetFixupKind\x12\x0c\n\x08\x41\x62solute\x10\x00\x12\x18\n\x14OffsetFromThreadBase\x10\x01\"$\n\x08Variable\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x0c\n\x04name\x18\x02 \x02(\t\",\n\tReference\x12\x0f\n\x07inst_ea\x18\x01 \x02(\x04\x12\x0e\n\x06offset\x18\x02 \x02(\x03\"\xcc\x01\n\x0e\x45xceptionFrame\x12\x0f\n\x07\x66unc_ea\x18\x01 \x02(\x04\x12\x10\n\x08start_ea\x18\x03 \x02(\x04\x12\x0e\n\x06\x65nd_ea\x18\x04 \x02(\x04\x12\r\n\x05lp_ea\x18\x05 \x02(\x04\x12-\n\x06\x61\x63tion\x18\x06 \x02(\x0e\x32\x1d.mcsema.ExceptionFrame.Action\x12\'\n\x05ttype\x18\x07 \x03(\x0b\x32\x18.mcsema.ExternalVariable\" \n\x06\x41\x63tion\x12\x0b\n\x07\x43leanup\x10\x00\x12\t\n\x05\x43\x61tch\x10\x01\"\x87\x01\n\rStackVariable\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x0c\n\x04size\x18\x02 \x02(\x04\x12\x11\n\tsp_offset\x18\x03 \x02(\x03\x12\x11\n\thas_frame\x18\x04 \x01(\x08\x12\x10\n\x08reg_name\x18\x05 \x01(\t\x12\"\n\x07ref_eas\x18\x06 \x03(\x0b\x32\x11.mcsema.Reference\"8\n\x0eGlobalVariable\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x0c\n\x04name\x18\x02 \x02(\t\x12\x0c\n\x04size\x18\x03 \x02(\x03\"\xe4\x01\n\x07Segment\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x0c\n\x04\x64\x61ta\x18\x02 \x02(\x0c\x12\x11\n\tread_only\x18\x03 \x02(\x08\x12\x13\n\x0bis_external\x18\x04 \x02(\x08\x12\x0c\n\x04name\x18\x05 \x02(\t\x12\x15\n\rvariable_name\x18\x06 \x01(\t\x12\x13\n\x0bis_exported\x18\x07 \x02(\x08\x12\x17\n\x0fis_thread_local\x18\x08 \x02(\x08\x12$\n\x05xrefs\x18\t \x03(\x0b\x32\x15.mcsema.DataReference\x12\x1e\n\x04vars\x18\n \x03(\x0b\x32\x10.mcsema.Variable\"\xea\x01\n\x06Module\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1f\n\x05\x66uncs\x18\x02 \x03(\x0b\x32\x10.mcsema.Function\x12!\n\x08segments\x18\x03 \x03(\x0b\x32\x0f.mcsema.Segment\x12\x30\n\x0e\x65xternal_funcs\x18\x04 \x03(\x0b\x32\x18.mcsema.ExternalFunction\x12/\n\rexternal_vars\x18\x05 \x03(\x0b\x32\x18.mcsema.ExternalVariable\x12+\n\x0bglobal_vars\x18\x08 \x03(\x0b\x32\x16.mcsema.GlobalVariable')
+  serialized_pb=_b('\n\tCFG.proto\x12\x06mcsema\"\xaf\x03\n\rCodeReference\x12\x35\n\x0btarget_type\x18\x01 \x02(\x0e\x32 .mcsema.CodeReference.TargetType\x12\x37\n\x0coperand_type\x18\x02 \x02(\x0e\x32!.mcsema.CodeReference.OperandType\x12\x30\n\x08location\x18\x03 \x02(\x0e\x32\x1e.mcsema.CodeReference.Location\x12\n\n\x02\x65\x61\x18\x04 \x02(\x03\x12\x0c\n\x04mask\x18\x05 \x01(\x03\x12\x0c\n\x04name\x18\x06 \x01(\t\",\n\nTargetType\x12\x0e\n\nCodeTarget\x10\x00\x12\x0e\n\nDataTarget\x10\x01\"~\n\x0bOperandType\x12\x14\n\x10ImmediateOperand\x10\x00\x12\x11\n\rMemoryOperand\x10\x01\x12\x1d\n\x19MemoryDisplacementOperand\x10\x02\x12\x16\n\x12\x43ontrolFlowOperand\x10\x03\x12\x0f\n\x0bOffsetTable\x10\x04\"&\n\x08Location\x12\x0c\n\x08Internal\x10\x00\x12\x0c\n\x08\x45xternal\x10\x01\"\xb7\x01\n\x0bInstruction\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\r\n\x05\x62ytes\x18\x02 \x02(\x0c\x12$\n\x05xrefs\x18\x03 \x03(\x0b\x32\x15.mcsema.CodeReference\x12\x16\n\x0elocal_noreturn\x18\x04 \x01(\x08\x12\r\n\x05lp_ea\x18\x05 \x01(\x04\x12\x14\n\x0chas_ref_info\x18\x06 \x02(\x08\x12\x16\n\x0ehas_delay_slot\x18\x07 \x02(\x08\x12\x12\n\nis_delayed\x18\x08 \x02(\x08\"U\n\x05\x42lock\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12)\n\x0cinstructions\x18\x02 \x03(\x0b\x32\x13.mcsema.Instruction\x12\x15\n\rsuccessor_eas\x18\x03 \x03(\x03\"\xaf\x01\n\x08\x46unction\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x1d\n\x06\x62locks\x18\x02 \x03(\x0b\x32\r.mcsema.Block\x12\x15\n\ris_entrypoint\x18\x03 \x02(\x08\x12\x0c\n\x04name\x18\x04 \x01(\t\x12)\n\nstack_vars\x18\x05 \x03(\x0b\x32\x15.mcsema.StackVariable\x12(\n\x08\x65h_frame\x18\x06 \x03(\x0b\x32\x16.mcsema.ExceptionFrame\"\x90\x02\n\x10\x45xternalFunction\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\n\n\x02\x65\x61\x18\x02 \x02(\x03\x12\x36\n\x02\x63\x63\x18\x03 \x02(\x0e\x32*.mcsema.ExternalFunction.CallingConvention\x12\x12\n\nhas_return\x18\x04 \x02(\x08\x12\x11\n\tno_return\x18\x05 \x02(\x08\x12\x16\n\x0e\x61rgument_count\x18\x06 \x02(\x05\x12\x0f\n\x07is_weak\x18\x07 \x02(\x08\x12\x11\n\tsignature\x18\x08 \x01(\t\"G\n\x11\x43\x61llingConvention\x12\x11\n\rCallerCleanup\x10\x00\x12\x11\n\rCalleeCleanup\x10\x01\x12\x0c\n\x08\x46\x61stCall\x10\x02\"d\n\x10\x45xternalVariable\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\n\n\x02\x65\x61\x18\x02 \x02(\x03\x12\x0c\n\x04size\x18\x03 \x02(\x05\x12\x0f\n\x07is_weak\x18\x04 \x02(\x08\x12\x17\n\x0fis_thread_local\x18\x05 \x02(\x08\"\xe7\x01\n\rDataReference\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\r\n\x05width\x18\x02 \x02(\x05\x12\x11\n\ttarget_ea\x18\x04 \x02(\x03\x12\x13\n\x0btarget_name\x18\x05 \x02(\t\x12\x16\n\x0etarget_is_code\x18\x06 \x02(\x08\x12@\n\x11target_fixup_kind\x18\x08 \x02(\x0e\x32%.mcsema.DataReference.TargetFixupKind\"9\n\x0fTargetFixupKind\x12\x0c\n\x08\x41\x62solute\x10\x00\x12\x18\n\x14OffsetFromThreadBase\x10\x01\"$\n\x08Variable\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x0c\n\x04name\x18\x02 \x02(\t\",\n\tReference\x12\x0f\n\x07inst_ea\x18\x01 \x02(\x04\x12\x0e\n\x06offset\x18\x02 \x02(\x03\"\xcc\x01\n\x0e\x45xceptionFrame\x12\x0f\n\x07\x66unc_ea\x18\x01 \x02(\x04\x12\x10\n\x08start_ea\x18\x03 \x02(\x04\x12\x0e\n\x06\x65nd_ea\x18\x04 \x02(\x04\x12\r\n\x05lp_ea\x18\x05 \x02(\x04\x12-\n\x06\x61\x63tion\x18\x06 \x02(\x0e\x32\x1d.mcsema.ExceptionFrame.Action\x12\'\n\x05ttype\x18\x07 \x03(\x0b\x32\x18.mcsema.ExternalVariable\" \n\x06\x41\x63tion\x12\x0b\n\x07\x43leanup\x10\x00\x12\t\n\x05\x43\x61tch\x10\x01\"\x87\x01\n\rStackVariable\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x0c\n\x04size\x18\x02 \x02(\x04\x12\x11\n\tsp_offset\x18\x03 \x02(\x03\x12\x11\n\thas_frame\x18\x04 \x01(\x08\x12\x10\n\x08reg_name\x18\x05 \x01(\t\x12\"\n\x07ref_eas\x18\x06 \x03(\x0b\x32\x11.mcsema.Reference\"8\n\x0eGlobalVariable\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x0c\n\x04name\x18\x02 \x02(\t\x12\x0c\n\x04size\x18\x03 \x02(\x03\"\xe4\x01\n\x07Segment\x12\n\n\x02\x65\x61\x18\x01 \x02(\x03\x12\x0c\n\x04\x64\x61ta\x18\x02 \x02(\x0c\x12\x11\n\tread_only\x18\x03 \x02(\x08\x12\x13\n\x0bis_external\x18\x04 \x02(\x08\x12\x0c\n\x04name\x18\x05 \x02(\t\x12\x15\n\rvariable_name\x18\x06 \x01(\t\x12\x13\n\x0bis_exported\x18\x07 \x02(\x08\x12\x17\n\x0fis_thread_local\x18\x08 \x02(\x08\x12$\n\x05xrefs\x18\t \x03(\x0b\x32\x15.mcsema.DataReference\x12\x1e\n\x04vars\x18\n \x03(\x0b\x32\x10.mcsema.Variable\"\xea\x01\n\x06Module\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1f\n\x05\x66uncs\x18\x02 \x03(\x0b\x32\x10.mcsema.Function\x12!\n\x08segments\x18\x03 \x03(\x0b\x32\x0f.mcsema.Segment\x12\x30\n\x0e\x65xternal_funcs\x18\x04 \x03(\x0b\x32\x18.mcsema.ExternalFunction\x12/\n\rexternal_vars\x18\x05 \x03(\x0b\x32\x18.mcsema.ExternalVariable\x12+\n\x0bglobal_vars\x18\x08 \x03(\x0b\x32\x16.mcsema.GlobalVariable')
 )
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
@@ -123,8 +123,8 @@ _EXTERNALFUNCTION_CALLINGCONVENTION = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1041,
-  serialized_end=1112,
+  serialized_start=1108,
+  serialized_end=1179,
 )
 _sym_db.RegisterEnumDescriptor(_EXTERNALFUNCTION_CALLINGCONVENTION)
 
@@ -145,8 +145,8 @@ _DATAREFERENCE_TARGETFIXUPKIND = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1391,
-  serialized_end=1448,
+  serialized_start=1458,
+  serialized_end=1515,
 )
 _sym_db.RegisterEnumDescriptor(_DATAREFERENCE_TARGETFIXUPKIND)
 
@@ -167,8 +167,8 @@ _EXCEPTIONFRAME_ACTION = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1707,
-  serialized_end=1739,
+  serialized_start=1774,
+  serialized_end=1806,
 )
 _sym_db.RegisterEnumDescriptor(_EXCEPTIONFRAME_ACTION)
 
@@ -283,6 +283,27 @@ _INSTRUCTION = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='has_ref_info', full_name='mcsema.Instruction.has_ref_info', index=5,
+      number=6, type=8, cpp_type=7, label=2,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='has_delay_slot', full_name='mcsema.Instruction.has_delay_slot', index=6,
+      number=7, type=8, cpp_type=7, label=2,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='is_delayed', full_name='mcsema.Instruction.is_delayed', index=7,
+      number=8, type=8, cpp_type=7, label=2,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -294,8 +315,8 @@ _INSTRUCTION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=455,
-  serialized_end=572,
+  serialized_start=456,
+  serialized_end=639,
 )
 
 
@@ -338,8 +359,8 @@ _BLOCK = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=574,
-  serialized_end=659,
+  serialized_start=641,
+  serialized_end=726,
 )
 
 
@@ -403,8 +424,8 @@ _FUNCTION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=662,
-  serialized_end=837,
+  serialized_start=729,
+  serialized_end=904,
 )
 
 
@@ -483,8 +504,8 @@ _EXTERNALFUNCTION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=840,
-  serialized_end=1112,
+  serialized_start=907,
+  serialized_end=1179,
 )
 
 
@@ -541,8 +562,8 @@ _EXTERNALVARIABLE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1114,
-  serialized_end=1214,
+  serialized_start=1181,
+  serialized_end=1281,
 )
 
 
@@ -607,8 +628,8 @@ _DATAREFERENCE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1217,
-  serialized_end=1448,
+  serialized_start=1284,
+  serialized_end=1515,
 )
 
 
@@ -644,8 +665,8 @@ _VARIABLE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1450,
-  serialized_end=1486,
+  serialized_start=1517,
+  serialized_end=1553,
 )
 
 
@@ -681,8 +702,8 @@ _REFERENCE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1488,
-  serialized_end=1532,
+  serialized_start=1555,
+  serialized_end=1599,
 )
 
 
@@ -747,8 +768,8 @@ _EXCEPTIONFRAME = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1535,
-  serialized_end=1739,
+  serialized_start=1602,
+  serialized_end=1806,
 )
 
 
@@ -812,8 +833,8 @@ _STACKVARIABLE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1742,
-  serialized_end=1877,
+  serialized_start=1809,
+  serialized_end=1944,
 )
 
 
@@ -856,8 +877,8 @@ _GLOBALVARIABLE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1879,
-  serialized_end=1935,
+  serialized_start=1946,
+  serialized_end=2002,
 )
 
 
@@ -949,8 +970,8 @@ _SEGMENT = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1938,
-  serialized_end=2166,
+  serialized_start=2005,
+  serialized_end=2233,
 )
 
 
@@ -1014,8 +1035,8 @@ _MODULE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2169,
-  serialized_end=2403,
+  serialized_start=2236,
+  serialized_end=2470,
 )
 
 _CODEREFERENCE.fields_by_name['target_type'].enum_type = _CODEREFERENCE_TARGETTYPE
@@ -1136,7 +1157,7 @@ StackVariable = _reflection.GeneratedProtocolMessageType('StackVariable', (_mess
   ))
 _sym_db.RegisterMessage(StackVariable)
 
-	GlobalVariable = _reflection.GeneratedProtocolMessageType('GlobalVariable', (_message.Message,), dict(
+GlobalVariable = _reflection.GeneratedProtocolMessageType('GlobalVariable', (_message.Message,), dict(
   DESCRIPTOR = _GLOBALVARIABLE,
   __module__ = 'CFG_pb2'
   # @@protoc_insertion_point(class_scope:mcsema.GlobalVariable)

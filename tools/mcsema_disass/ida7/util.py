@@ -22,29 +22,10 @@ import inspect
 import ida_ua
 import ida_bytes
 
+
 _DEBUG_FILE = None
 _DEBUG_PREFIX = ""
 _INFO = idaapi.get_inf_structure()
-
-# Map of the external functions names which does not return to a tuple containing information
-# like the number of agruments and calling convention of the function.
-_NORETURN_EXTERNAL_FUNC = {}
-
-FUNC_LSDA_ENTRIES = collections.defaultdict()
-
-IS_ARM = "ARM" in _INFO.procName
-
-# True if we are running on an ELF file.
-IS_ELF = (idaapi.f_ELF == _INFO.filetype) or \
-         (idc.GetLongPrm(idc.INF_FILETYPE) == idc.FT_ELF)
-
-# True if this is a Windows PE file.
-IS_PE = idaapi.f_PE == _INFO.filetype
-
-if IS_ARM:
-  from arm_util import *
-else:
-  from x86_util import *
 
 def INIT_DEBUG_FILE(file):
   global _DEBUG_FILE
@@ -62,6 +43,30 @@ def DEBUG(s):
   global _DEBUG_FILE
   if _DEBUG_FILE:
     _DEBUG_FILE.write("{}{}\n".format(_DEBUG_PREFIX, str(s)))
+
+# Map of the external functions names which does not return to a tuple containing information
+# like the number of agruments and calling convention of the function.
+_NORETURN_EXTERNAL_FUNC = {}
+
+FUNC_LSDA_ENTRIES = collections.defaultdict()
+
+IS_ARM = "ARM" in _INFO.procName
+IS_MIPS = "mips" in _INFO.procName
+
+# True if we are running on an ELF file.
+IS_ELF = (idaapi.f_ELF == _INFO.filetype) or \
+         (idc.GetLongPrm(idc.INF_FILETYPE) == idc.FT_ELF)
+
+
+# True if this is a Windows PE file.
+IS_PE = idaapi.f_PE == _INFO.filetype
+
+if IS_ARM:
+  from arm_util import *
+elif IS_MIPS:
+  from mips_util import *
+else:
+  from x86_util import *
 
 # Python 2.7's xrange doesn't work with `long`s.
 def xrange(begin, end=None, step=1):
@@ -161,7 +166,7 @@ def read_bytes_slowly(start, end):
   return "".join(bytestr)
 
 def read_byte(ea):
-  byte = read_bytes_slowly(ea, ea + 1)
+  byte = read_bytes_slowly(ea, ea + 1) 
   byte = ord(byte) 
   return byte
 
@@ -178,7 +183,7 @@ def read_dword(ea):
 def read_qword(ea):
   bytestr = read_bytes_slowly(ea, ea + 8)
   qword = struct.unpack("<Q", bytestr)[0]
-  return qword
+  return qword 
 
 def read_leb128(ea, signed):
   """ Read LEB128 encoded data
@@ -215,14 +220,25 @@ def instruction_personality(arg):
     p = PERSONALITIES[arg.itype]
   except AttributeError:
     p = PERSONALITY_NORMAL
-
+ 
   return fixup_personality(arg, p)
 
-def is_conditional_jump(arg):
-  return instruction_personality(arg) == PERSONALITY_CONDITIONAL_BRANCH
+def  is_conditional_call(arg):
+  if not IS_MIPS:
+    return False
+  return instruction_personality(arg) == PERSONALITY_CONDITIONALCALL 
 
+def is_conditional_jump(arg):
+  return instruction_personality(arg) ==  PERSONALITY_CONDITIONAL_BRANCH
+
+def instruction_ends_block_and_has_pipeline_inst(arg):
+  return instruction_personality(arg) ==  PERSONALITY_BRANCH_PIPELINE 
+  
 def is_unconditional_jump(arg):
   return instruction_personality(arg) in (PERSONALITY_DIRECT_JUMP, PERSONALITY_INDIRECT_JUMP)
+
+def is_unconditional_branch(arg):   
+  return instruction_personality(arg) ==  PERSONALITY_UNCONDITIONAL_BRANCH
 
 def is_direct_jump(arg):
   return instruction_personality(arg) == PERSONALITY_DIRECT_JUMP
@@ -236,7 +252,7 @@ def is_function_call(arg):
 def is_indirect_function_call(arg):
   return instruction_personality(arg) == PERSONALITY_INDIRECT_CALL
 
-def is_direct_function_call(arg):
+def is_direct_function_call(arg): 
   return instruction_personality(arg) == PERSONALITY_DIRECT_CALL
 
 def is_return(arg):
@@ -245,14 +261,16 @@ def is_return(arg):
 def is_control_flow(arg):
   return instruction_personality(arg) != PERSONALITY_NORMAL
 
+  
 def instruction_ends_block(arg):
-  return instruction_personality(arg) in (PERSONALITY_CONDITIONAL_BRANCH,
+  return instruction_personality(arg) in (PERSONALITY_CONDITIONAL_BRANCH,                                         
                                           PERSONALITY_DIRECT_JUMP,
                                           PERSONALITY_INDIRECT_JUMP,
                                           PERSONALITY_RETURN,
                                           PERSONALITY_TERMINATOR,
                                           PERSONALITY_SYSTEM_RETURN)
-
+                                          
+                                          
 def is_invalid_ea(ea):
   """Returns `True` if `ea` is not valid, i.e. it doesn't point into any
   valid segment."""
@@ -277,6 +295,9 @@ def decode_instruction(ea):
   if ea in _NOT_INST_EAS:
     return _BAD_INSTRUCTION
 
+  if IS_MIPS and(idc.get_segm_name(idc.get_segm_start(ea)) in [".rodata"]):
+    return _BAD_INSTRUCTION
+  
   decoded_inst = ida_ua.insn_t()
   inslen = ida_ua.decode_insn(decoded_inst, ea)
   if inslen <= 0:
@@ -373,7 +394,7 @@ def get_destructor_segment():
   for seg_ea in idautils.Segments():
     seg_name = idc.get_segm_name(seg_ea).lower()
     if seg_name in [".fini_array", ".dtor"]:
-      return seg_ea;
+      return seg_ea
 
 def is_internal_code(ea):
   if is_invalid_ea(ea):
@@ -438,11 +459,11 @@ def get_symbol_name(from_ea, ea=None, allow_dummy=False):
 
   name = ""
   try:
-    name = name or idc.get_name(ea, 0) #calc_gtn_flags(from_ea, ea))
+    name = name or idc.get_name(ea, 0) #calc_gtn_flags(from_ea, ea)) 
   except:
     pass
 
-  try:
+  try: 
     name = name or idc.get_func_name(ea)
   except:
     pass
@@ -511,7 +532,7 @@ def is_noreturn_external_function(ea):
 
 def is_noreturn_function(ea):
   """Returns `True` if the function at `ea` is a no-return function."""
-  flags = idc.get_func_attr(ea, idc.FUNCATTR_FLAGS)
+  flags = idc.get_func_attr(ea, idc.FUNCATTR_FLAGS) 
   return 0 < flags and \
          (flags & idaapi.FUNC_NORET) and \
          ea not in FUNC_LSDA_ENTRIES.keys() and \

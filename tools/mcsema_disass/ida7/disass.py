@@ -65,8 +65,6 @@ def execute(args, command_args):
   cmd.append("-S\"{}\"".format(" ".join(script_cmd)))
   cmd.append(quote(args.binary))
 
-     
-
   try:
     with open(os.devnull, "w") as devnull:
       return subprocess.check_call(

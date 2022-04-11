@@ -14,6 +14,8 @@
 
 import ida_bytes
 import ida_nalt
+import ida_name
+import ida_offset
 from util import *
 
 class Reference(object):
@@ -170,7 +172,24 @@ _HAS_NO_REFS = set()
 _NO_REFS = tuple()
 _ENABLE_CACHING = False
 _BAD_ARM_REF_OFF = (idc.BADADDR, 0)
+#_BAD_MIPS_REF_OFF = (idc.BADADDR, 0)
 _NOT_A_REF = set()
+
+
+# for MIPS32 binaries, IDA-Pro 7.6 sometimes shows different value for $gp register
+# in every function inside the binary(multiple .got sections)
+# for recovery purpose, we require a single consistent value, so we use
+# the value that appears the most often as the correct one
+# MIPS_GP = 0xffffffff
+import idautils
+from collections import defaultdict
+gp_vals = defaultdict(int)
+srGP = 0x44
+for segea in idautils.Segments():
+    gpVal = idaapi.get_sreg(segea , srGP)
+    gp_vals[gpVal] += 1
+MIPS_GP = max(gp_vals, key=gp_vals.get)
+
 
 # Remove a reference from `from_ea` to `to_ea`.
 def remove_instruction_reference(from_ea, to_ea):
@@ -232,6 +251,7 @@ def _get_arm_ref_candidate(mask, op_val, op_str, all_refs):
 
   return _BAD_ARM_REF_OFF
 
+
 # Try to handle `@PAGE` and `@PAGEOFF` references, resolving them to their
 # 'intended' address.
 #
@@ -280,30 +300,88 @@ def _is_ea_into_bad_code(ea, binary_is_pie):
 # Try to recognize an operand as a reference candidate when a target fixup
 # is not available.
 def _get_ref_candidate(inst, op, all_refs, binary_is_pie):
-  global _POSSIBLE_REFS, _ENABLE_CACHING
+  global _POSSIBLE_REFS, _ENABLE_CACHING 
+  global MIPS_GP
 
   ref = None
   addr_val = idc.BADADDR
   mask = 0
   is_memop = idc.o_mem == op.type
+  old_addr_val = addr_val
 
   if idc.o_imm == op.type:
     addr_val = op.value
   elif op.type in (idc.o_displ, idc.o_mem, idc.o_near):
-    addr_val = op.addr
+    addr_val = op.addr       
   else:
     return None
-
+   
   # TODO(artem): We should have a class that has ref heuristics and put ARM
   #              related refs in the ARM class, and X86 in the x86 class that
   #              will avoid these awkward `if IS_ARM` and the comments about
   #              x86 / amd64 stuff.
+  
   if IS_ARM:
     old_addr_val = addr_val
     addr_val, mask = _try_get_arm_ref_addr(inst, op, addr_val, all_refs)
+  
+  if IS_MIPS:
+    # for IDA-Pro version 7.6, try and treat all imm ops in PIE binaries
+    # as references. If they don't resolve to a valid symbol, revert
+    # back to treating it as a plain number
+    if (op.n == 2): # only do this for imm operands
+      if ida_name.get_name(0x400000 + addr_val):
+        ida_offset.op_offset(inst.ea, op.n, idc.REF_OFF32 | idc.REFINFO_NOBASE, idc.BADADDR, 0x400000, 0)
+        idaapi.auto_wait()
 
+      """
+      for pie binaries on version 7.6, convert all operands to offsets.
+      if it doesn't converts to a valid symbol, revert back to treating it 
+      as a plain number.
+      """
+      if binary_is_pie and (op.type == idc.o_imm):
+        ida_offset.op_offset(inst.ea, op.n, idc.REF_OFF32 | idc.REFINFO_NOBASE, idc.BADADDR, 0x000000, 0)
+        idaapi.auto_wait()
+        if not (ida_name.get_name(0x00000000 + addr_val)):
+          # revert back to plain number
+          ida_bytes.clr_op_type(inst.ea, op.n)
+          idaapi.auto_wait()
+        if idc.get_segm_name(idc.get_segm_start((idc.get_name_ea_simple(ida_name.get_name(addr_val))))) in ["REGINFO", "LOAD", ".MIPS.abiflags"]:
+          ida_bytes.clr_op_type(inst.ea, op.n)
+          idaapi.auto_wait() # probably not required for clearing
+          
+
+    if "$gp" not in idc.GetDisasm(inst.ea) and "$sp" not in idc.GetDisasm(inst.ea):
+      # try and convert all displ ops not based with $gp or $sp as offsets
+      if ida_name.get_name(op.addr + 0x10000):
+        ida_offset.op_offset(inst.ea, op.n, idc.REF_OFF32 | idc.REFINFO_NOBASE, idc.BADADDR, 0x10000, 0)
+        idaapi.auto_wait()
+        
+    info = idaapi.refinfo_t()
+    has_ref_info = ida_nalt.get_refinfo(info, inst.ea, op.n)
+
+    if has_ref_info and info.no_base_xref(): 
+      if op.type == idc.o_imm:
+        addr_val += info.base
+
+      if op.type == idc.o_displ:
+        if "($gp)" in idc.GetDisasm(inst.ea):
+          ida_offset.op_offset(inst.ea, op.n, idc.REF_OFF32 | idc.REFINFO_NOBASE, idc.BADADDR, MIPS_GP, 0) #for lw with $gp as base
+          idaapi.auto_wait()
+
+        # in idapython, for displ operands, the value read will not be the same
+        # as the one shown in disassembly in the `ida` or `idat``
+        #
+        # eg, 004008F8 lw      $t9, -0x7FDC($gp)
+        #
+        # here, the offset in the second operand will be read as `0xffff8024`
+        # so, we will extract the required value, and add that to the MIPS_GP value
+        # to create the complete reference address
+        addr_val = (info.base + addr_val)& 0xFFFFFFFF
+    
+                                          
   info = idaapi.refinfo_t()
-  has_ref_info = ida_nalt.get_refinfo(info, inst.ea, op.n) == 1
+  has_ref_info = ida_nalt.get_refinfo(info, inst.ea, op.n)
 
   if is_invalid_ea(addr_val) \
     or idc.get_segm_name(idc.get_segm_start(addr_val)) in ["LOAD"]:
@@ -316,6 +394,7 @@ def _get_ref_candidate(inst, op, all_refs, binary_is_pie):
     # And we'd get `addr_val` as `0x22FC`, which isn't a valid EA. Here we
     # detect this and fixup the `addr_val` to include the relative base
     # of `0x140000000`.
+     
     if has_ref_info and info.is_rvaoff():
       addr_val += info.base
       if is_invalid_ea(addr_val):
@@ -407,7 +486,7 @@ def enable_reference_caching():
 # Get a list of references from an instruction.
 def get_instruction_references(arg, binary_is_pie=False):
   global _ENABLE_CACHING, _NOT_A_REF
-
+  
   inst = arg
   if isinstance(arg, (int, long)):
     inst, _ = decode_instruction(arg)
@@ -459,20 +538,34 @@ def get_instruction_references(arg, binary_is_pie=False):
         idaapi.del_cref(op_ea, op.value, False)
         continue
 
+      if not "add" in idc.print_insn_mnem(inst.ea):
+        idaapi.del_dref(op_ea, op.value)
+        idaapi.del_cref(op_ea, op.value, False)
+        continue
+      
       # If this is a PIE-mode, 64-bit binary, then most likely the immediate
       # operand is not a data ref. 
       if seg_begin.use64() and binary_is_pie:
         idaapi.del_dref(op_ea, op.value)
         idaapi.del_cref(op_ea, op.value, False)
         continue
+      
+      if (idc.get_segm_name(seg_begin.start_ea) in [".text", ".init", "REGINFO", ".MIPS.abiflags"]) and IS_MIPS and binary_is_pie:
+        if not ref.ea in idautils.Functions():
+          idaapi.del_dref(op_ea, op.value)
+          idaapi.del_cref(op_ea, op.value, False)
+          continue
 
       # In the special case of "ADR" and "ADRP" instructions for aarch64
       # IDA infers the absolute immediate value to assign as op_type, rather
       # than characterizing it as a displacement from PC
       if idc.print_insn_mnem(inst.ea) in ["ADRP", "ADR"]:
          ref.type = Reference.DISPLACEMENT
-      else:
+      elif idc.print_insn_mnem(inst.ea) in ["addiu", "addu"]:
+         #for mips32
          ref.type = Reference.IMMEDIATE
+      else:
+         ref.type = Reference.MEMORY  
 
       ref.symbol = get_symbol_name(op_ea, ref.ea)
 
@@ -482,6 +575,27 @@ def get_instruction_references(arg, binary_is_pie=False):
     # Note: ref.ea may not be op.addr, this happens on AArch64 with
     #       @PAGE and @PAGEOFF memory operands.
     elif idc.o_displ == op.type:
+      # IDA-Pro sometimes incorrectly makes some displ operands as references, we will detect
+      # delete those references
+      if ("lw" != idc.print_insn_mnem(inst.ea) and idc.print_insn_mnem(inst.ea) in ["lbu"] and  idc.get_segm_name(ref.ea) not in [".bss", "extern", ".data"]):
+          idaapi.del_dref(op_ea, op.value)
+          idaapi.del_cref(op_ea, op.value, False)
+          continue
+      
+      if binary_is_pie:
+        if("sw" == idc.print_insn_mnem(inst.ea)):    
+            idaapi.del_dref(op_ea, op.value)
+            idaapi.del_cref(op_ea, op.value, False)
+            continue
+
+      elif not (ref.ea not in idautils.Functions() or ".got" not in idc.get_segm_name(ref.ea)):
+          idaapi.del_dref(op_ea, op.value)
+          idaapi.del_cref(op_ea, op.value, False)
+          DEBUG("Deleted displ ref in else from {:x} to {:x}".format(inst.ea, ref.ea))
+          continue
+      else:
+           DEBUG("didn't delete disp ref from {:x} to {:x}".format(inst.ea, ref.ea))
+      
       ref.type = Reference.DISPLACEMENT
       ref.symbol = get_symbol_name(op_ea, ref.ea)
 

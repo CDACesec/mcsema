@@ -60,6 +60,7 @@ def find_linear_terminator(ea, max_num=256):
 
   prev_term = None
   term_ea = ea
+  pipe_start = None
   for i in xrange(max_num):
     term_inst, inst_bytes = decode_instruction(ea)
     if not term_inst:
@@ -69,7 +70,11 @@ def find_linear_terminator(ea, max_num=256):
 
     term_ea = ea
     prev_term = term_inst
-    if ea in _TERMINATOR_EAS or instruction_ends_block(term_inst):
+    
+    if instruction_ends_block_and_has_pipeline_inst(term_inst):
+      pipe_start = term_inst
+
+    elif ea in _TERMINATOR_EAS or instruction_ends_block(term_inst) or pipe_start:
       break
 
     ea += len(inst_bytes)
@@ -86,7 +91,7 @@ def find_linear_terminator(ea, max_num=256):
 def get_direct_branch_target(arg):
   """Tries to 'force' get the target of a direct or conditional branch.
   IDA can't always get code refs for flows from an instruction that appears
-  inside another instruction (and so even seen by IDA in the first place)."""
+  inside another instruction (and so even seen by IDA in the first place).""" 
   if not isinstance(arg, (int, long)):
     branch_inst_ea = arg.ea
   else:
@@ -96,9 +101,7 @@ def get_direct_branch_target(arg):
     return branch_flows[0]
   except:
     decoded_inst, _ = decode_instruction(branch_inst_ea)
-    target_ea = decoded_inst.Op1.addr
-    #log.warning("Determined target of {:08x} to be {:08x}".format(
-    #    branch_inst_ea, target_ea))
+    target_ea = decoded_inst.Op1.addr                                       
     return target_ea
 
 def is_noreturn_inst(arg):
@@ -125,13 +128,26 @@ def get_static_successors(sub_ea, inst, binary_is_pie):
     if not is_noreturn_function(get_direct_branch_target(inst.ea)):
       yield next_ea  # Not recognised as a `noreturn` function.
 
+
   if is_function_call(inst):  # Indirect function call, system call.
     yield next_ea
 
+  elif is_conditional_call(inst): # for inst like bgezal, which can be both branch and call
+    target_is_func = False # there must be a better way to do this
+    for funcea in idautils.Functions():
+      if(funcea == list(idautils.CodeRefsFrom(inst.ea, False))[0]):
+        target_is_func = True
+    if target_is_func:
+      yield next_ea
+      #yield get_direct_branch_target(inst.ea)            
+    else:
+      yield next_ea
+      yield get_direct_branch_target(inst.ea) 
+
   elif is_conditional_jump(inst):
     yield next_ea
-    yield get_direct_branch_target(inst.ea)
-
+    yield get_direct_branch_target(inst.ea) 
+                                    
   elif is_direct_jump(inst):
     yield get_direct_branch_target(inst.ea)
 
@@ -161,10 +177,19 @@ def get_static_successors(sub_ea, inst, binary_is_pie):
 
 _BAD_BLOCK = (tuple(), set())
 
+def get_static_successors_with_pipeline(sub_ea, prev_inst, inst, binary_is_pie):
+  """Returns the statically known successors of an instruction."""  
+  for targetBB in idautils.CodeRefsFrom(prev_inst.ea, False):
+    #DEBUG("targetBB {}".format(targetBB))
+    yield targetBB  
+    next_ea = inst.ea + inst.size
+    yield next_ea
+  _BAD_BLOCK = (tuple(), set())
+
 def analyse_block(func_ea, ea, binary_is_pie=False):
   """Find the instructions of a basic block."""
   global _BLOCK_HEAD_EAS, _TERMINATOR_EAS, _FUNC_HEAD_EAS
-  
+
   if not is_code(ea):
     DEBUG("ERROR: Block at {:x} in function {:x} is not code".format(ea, func_ea))
     return _BAD_BLOCK
@@ -172,8 +197,10 @@ def analyse_block(func_ea, ea, binary_is_pie=False):
   inst_eas = []
   insts = []
   seen = set()
+  
 
   next_ea = ea
+  pipe_inst = None
   while is_code(next_ea) and next_ea not in seen:
     seen.add(next_ea)
     inst, _ = decode_instruction(next_ea)
@@ -183,7 +210,10 @@ def analyse_block(func_ea, ea, binary_is_pie=False):
     inst_eas.append(next_ea)
     insts.append(inst)
 
-    if next_ea in _TERMINATOR_EAS or instruction_ends_block(inst):
+    if instruction_ends_block_and_has_pipeline_inst(inst):
+      pipe_inst = inst
+
+    elif next_ea in _TERMINATOR_EAS or instruction_ends_block(inst)or pipe_inst:
       break
 
     next_ea = inst.ea + inst.size
@@ -192,9 +222,14 @@ def analyse_block(func_ea, ea, binary_is_pie=False):
 
   successors = []
   if inst_eas:
-    _TERMINATOR_EAS.add(inst_eas[-1])
-    successors = get_static_successors(func_ea, insts[-1], binary_is_pie)
-    successors = [succ for succ in successors if is_code(succ)]
+    if pipe_inst:
+      _TERMINATOR_EAS.add(inst_eas[-1])
+      successors = get_static_successors_with_pipeline(func_ea, insts[-2], insts[-1], binary_is_pie)
+      successors = [succ for succ in successors if is_code(succ)]    
+    else:
+        _TERMINATOR_EAS.add(inst_eas[-1])
+        successors = get_static_successors(func_ea, insts[-1], binary_is_pie)
+        successors = [succ for succ in successors if is_code(succ)]  
   
   return (inst_eas, set(successors))
 
@@ -220,8 +255,21 @@ def find_default_block_heads(sub_ea):
   if f:
     for b in idaapi.FlowChart(f):
       if min_ea <= b.start_ea < max_ea:
-        _BLOCK_HEAD_EAS.add(b.start_ea)
-        heads.add(b.start_ea)
+        if IS_MIPS:
+          # IDA-Pro doesn't ends BB with bgezal as the second last instruction(branch delay slot)
+          # for cases where bgezal's jump target is a function, we will change the default BB
+          # provided by IDA-Pro
+          if (b.start_ea > min_ea) and (idc.print_insn_mnem(b.start_ea - 0x4) == "bgezal")\
+            and (idautils.DecodeInstruction(b.start_ea - 0x4).Op2.addr in idautils.Functions()):
+            _BLOCK_HEAD_EAS.add(b.start_ea + 0x4)
+            heads.add(b.start_ea + 0x4)
+          else:
+            _BLOCK_HEAD_EAS.add(b.start_ea)
+            heads.add(b.start_ea)
+            
+        else:
+          _BLOCK_HEAD_EAS.add(b.start_ea)
+          heads.add(b.start_ea)
         DEBUG("  block [{:x}, {:x})".format(b.start_ea, b.end_ea))
 
     for chunk_start_ea, chunk_end_ea in idautils.Chunks(sub_ea):

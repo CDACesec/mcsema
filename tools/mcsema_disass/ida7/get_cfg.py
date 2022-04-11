@@ -12,7 +12,9 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License.
+# limitations under the Licenses
+
+# Reviewed and Modified for use by Centre for Development of Advanced Computing (C-DAC)
 
 import idautils
 import idaapi
@@ -27,13 +29,14 @@ import itertools
 import pprint
 
 # Bring in utility libraries.
-from util import *
-from table import *
-from flow import *
-from refs import *
-from segment import *
-from collect_variable import *
-from exception import *
+from util import*
+from table import*
+from flow import*
+from refs import*
+from segment import*
+from collect_variable import*
+from exception import*
+
 
 #hack for IDAPython to see google protobuf lib
 if os.path.isdir('/usr/lib/python2.7/dist-packages'):
@@ -45,6 +48,8 @@ if os.path.isdir('/usr/local/lib/python2.7/dist-packages'):
 tools_disass_ida_dir = os.path.dirname(__file__)
 tools_disass_dir = os.path.dirname(tools_disass_ida_dir)
 
+ida_auto.auto_wait()
+
 # Note: The bootstrap file will copy CFG_pb2.py into this dir!!
 import CFG_pb2
 
@@ -54,9 +59,9 @@ EXTERNAL_VARS_TO_RECOVER = {}
 RECOVERED_EAS = set()
 ACCESSED_VIA_JMP = set()
 
-TO_RECOVER = {
-  "stack_var" : False,
-}
+TO_RECOVER = {                        
+  "stack_var" : False               
+}                                          
 
 RECOVER_EHTABLE = False
 
@@ -89,6 +94,11 @@ OS_NAME = ""
 EXTERNAL_NAMES = ("@@GLIBC_", "@@GLIBCXX_", "@@CXXABI_", "@@GCC_")
 
 _NOT_ELF_BEGIN_EAS = (0xffffffffL, 0xffffffffffffffffL)
+
+# CALLS = [
+ #       idaapi.NN_call,
+  #      idaapi.NN_callfi,
+   #     idaapi.NN_callni]
 
 # Returns `True` if this is an ELF binary (as opposed to an ELF object file).
 def is_linked_ELF_program():
@@ -231,10 +241,9 @@ def parse_os_defs_file(df):
         (fname, args, conv, ret) = line_args
       elif len(line_args) == 5:
         (fname, args, conv, ret, sign) = line_args
-
       if conv == "C":
         realconv = CFG_pb2.ExternalFunction.CallerCleanup
-      elif conv == "E":
+      elif conv == "E":                                                               
         realconv = CFG_pb2.ExternalFunction.CalleeCleanup
       elif conv == "F":
         realconv = CFG_pb2.ExternalFunction.FastCall
@@ -334,7 +343,7 @@ _INVALID_THUNK_ADDR = (False, idc.BADADDR)
 def is_ELF_thunk_by_structure(ea):
   """Try to manually identify an ELF thunk by its structure."""
   global _INVALID_THUNK_ADDR
-
+ 
   if ".plt" not in idc.get_segm_name(ea).lower():
     return _INVALID_THUNK_ADDR
 
@@ -360,6 +369,11 @@ def is_ELF_thunk_by_structure(ea):
   target_ea = get_reference_target(inst.ea)
   if ".got.plt" == idc.get_segm_name(target_ea).lower():
     target_ea = get_reference_target(target_ea)
+
+  if IS_MIPS:
+    if ".got" == idc.get_segm_name(target_ea).lower():
+      target_ea = get_reference_target(target_ea)
+  
 
   # For AArch64, the thunk structure is something like:
   #     .plt:000400470 .atoi
@@ -402,7 +416,8 @@ def is_thunk_by_flags(ea):
   thing will not actually follow the 'structured' form matched above, so
   we'll try to recursively match to the 'final' referenced thunk."""
   global _INVALID_THUNK_ADDR
-
+  
+  targ_ea = 0x0
   if not is_thunk(ea):
     return _INVALID_THUNK_ADDR
   
@@ -426,6 +441,9 @@ def is_thunk_by_flags(ea):
 
   if not is_external_reference(ea):
     return _INVALID_THUNK_ADDR
+
+  if targ_ea == 0x0:
+    DEBUG("it is zero for ea: {:x}".format(ea))
 
   return True, targ_ea
 
@@ -469,8 +487,11 @@ def is_start_of_function(ea):
   """Returns `True` if `ea` is the start of a function."""
   if not is_code(ea):
     return False
-
-  name = idc.GetTrueName(ea) or idc.get_func_name(ea)
+  
+  if idaapi.IDA_SDK_VERSION == 730:
+    name = idc.GetTrueName(ea) or idc.get_func_name(ea)   # for IDApro 7.3
+  else: # assuming ida version as 7.6
+    name = ida_name.get_ea_name(ea) or idc.get_func_name(ea)
   return ea == idc.get_name_ea_simple(name)
 
 _REFERENCE_OPERAND_TYPE = {
@@ -703,22 +724,69 @@ def recover_instruction(M, B, ea):
   I = B.instructions.add()
   I.ea = ea  # May not be `inst.ea` because of prefix coalescing.
   I.bytes = inst_bytes
-
+  # for big endian mips32 binaries, reverse the recovered
+  # instruction bytes in the .cfg file
+  if args.arch == "mipsb":
+    I.bytes = inst_bytes[::-1]
   refs = get_instruction_references(inst, PIE_MODE)
   recover_instruction_references(I, inst, ea, refs)
 
   if is_noreturn_inst(inst):
     I.local_noreturn = True
 
-
+ 
   DEBUG_PUSH()
   table = get_jump_table(inst, PIE_MODE)
-  if table and table.offset and \ 
+  if table and table.offset and \
      not is_invalid_ea(table.offset * table.offset_mult):
     recover_instruction_offset_table(I, table)
 
   if not table:
     try_recovery_external_flow(I, inst, refs)
+
+  has_ref_info = False
+  info = idaapi.refinfo_t()
+  if idaapi.IDA_SDK_VERSION == 760:
+    for op in inst.ops:
+      if ida_nalt.get_refinfo(info, inst.ea, op.n):
+        has_ref_info = True
+        break
+  else:
+    for op in inst.Operands:   # for idapro 7.3
+      if ida_nalt.get_refinfo(info, inst.ea, op.n):
+        has_ref_info = True
+        break
+  I.has_ref_info = has_ref_info
+
+  # store information about a delay slot in a instruction
+  # has_delay_slot: Instruction has a delay slot
+  # is_delayed: Instruction is in the delay slot of another instruction
+
+  delay_slot_ins = ["bgezal", "bgez", "bltz", "beq","bne","bgtz","jr","j","jal","blez","jalr"]
+
+  # edit: bad hack, consider using the instruction's personality
+  # for this purpose
+  I.has_delay_slot = False
+  I.is_delayed = False
+  
+
+  # bgezal can be both branch can call
+  # for cases where the brnach target is a function, treat it as a function with a 
+  # delay slot, else, consider it a branch without a delay slot.
+
+  temp_inst = idautils.DecodeInstruction(ea)
+  
+  if idc.print_insn_mnem(ea) in delay_slot_ins:
+    I.has_delay_slot = True
+    if temp_inst.get_canon_mnem() == 'bgezal':
+      if temp_inst.Op2.addr not in idautils.Functions():
+        I.has_delay_slot = False
+
+  if idc.print_insn_mnem(ea - 0x4) in delay_slot_ins:
+    I.is_delayed = True
+    i_inst = idautils.DecodeInstruction(ea - 0x4)
+    if i_inst.get_canon_mnem() == 'bgezal'and (i_inst.Op2.addr not in idautils.Functions()):
+        I.is_delayed = False
 
   DEBUG_POP()
 
@@ -731,22 +799,24 @@ def recover_basic_block(M, F, block_ea):
     return
 
   inst_eas, succ_eas = analyse_block(F.ea, block_ea, PIE_MODE)
-
+      
   DEBUG("BB: {:x} in func {:x} with {} insts".format(
       block_ea, F.ea, len(inst_eas)))
   
   B = F.blocks.add()
   B.ea = block_ea
-
+ 
   DEBUG_PUSH()
+ 
   I = None
   for inst_ea in inst_eas:
-    I = recover_instruction(M, B, inst_ea)
+    I = recover_instruction(M,B,inst_ea)
     # Get the landing pad associated with the instructions;
     # 0 if no landing pad associated
+  
     if RECOVER_EHTABLE is True and I:
       I.lp_ea = get_exception_landingpad(F, inst_ea)
-
+  
   DEBUG_PUSH()
   if I and I.local_noreturn:
     DEBUG("Does not return")
@@ -756,7 +826,7 @@ def recover_basic_block(M, F, block_ea):
     DEBUG("Successors: {}".format(", ".join("{0:x}".format(i) for i in succ_eas)))
   else:
     DEBUG("No successors")
-
+  
   DEBUG_POP()
   DEBUG_POP()
 
@@ -788,29 +858,38 @@ def recover_function(M, func_ea, new_func_eas, entrypoints):
     return
 
   _RECOVERED_FUNCS.add(func_ea)
-
+   
   # `func_ea` could be the entrypoint but may not be identified
   # as the start of the function.
   if not is_start_of_function(func_ea): # and func_ea not in entrypoints:
     DEBUG("{:x} is not a function! Not recovering.".format(func_ea))
     return
-
   F = M.funcs.add()
   F.ea = func_ea
   F.is_entrypoint = (func_ea in entrypoints)
-  name = get_symbol_name(func_ea)
+
+  # In optimized binaries of MIPS32, IDA-Pro will disassble main
+  # as _ftext sometimes, we can revert it back to being
+  # called `main` in the .cfg file
+  comment = ida_bytes.get_cmt(func_ea, 0)
+  if comment and "main" in comment:
+    name = "main"
+  else:
+    name = get_symbol_name(func_ea)
+  
   if name:
     DEBUG("Recovering {} at {:x}".format(name, func_ea))
     F.name = name.format('utf-8')
+    
   else:
     DEBUG("Recovering {:x}".format(func_ea))
-
+  
   DEBUG_PUSH()
   # Update the protobuf with the recovered eh_frame entries
   if RECOVER_EHTABLE is True:
     recover_exception_entries(F, func_ea)
   blockset, term_insts = analyse_subroutine(func_ea, PIE_MODE)
-
+  
   for term_inst in term_insts:
     if get_jump_table(term_inst, PIE_MODE):
       DEBUG("Terminator inst {:x} in func {:x} is a jump table".format(
@@ -823,13 +902,15 @@ def recover_function(M, func_ea, new_func_eas, entrypoints):
     if block_ea in processed_blocks:
       DEBUG("ERROR: Attempting to add same block twice: {0:x}".format(block_ea))
       continue
-
+  
     processed_blocks.add(block_ea)
     recover_basic_block(M, F, block_ea)
+    
 
   if TO_RECOVER["stack_var"]:
     recover_variables(F, func_ea, processed_blocks)
 
+  
   DEBUG_POP()
 
 def find_default_function_heads():
@@ -1013,13 +1094,15 @@ def recover_region(M, region_name, region_ea, region_end_ea, exported_vars):
   S.is_thread_local = is_tls_segment(region_ea)
   S.name = seg_name.format('utf-8')
   S.is_exported = region_ea in exported_vars
-
+ 
   if region_name != seg_name:
-    S.variable_name = region_name.format('utf-8')
+    S.variable_name = region_name.format('utf-8' )
 
   DEBUG_PUSH()
+  
   recover_region_cross_references(M, S, region_ea, region_end_ea)
   recover_region_variables(M, S, region_ea, region_end_ea, exported_vars)
+
   DEBUG_POP()
 
 def recover_regions(M, exported_vars, global_vars=[]):
@@ -1360,8 +1443,8 @@ def identify_program_entrypoints(func_eas):
   DEBUG_PUSH()
 
   exclude = set(["_start", "__libc_csu_fini", "__libc_csu_init", "main",
-                 "__data_start", "__dso_handle", "_IO_stdin_used",
-                 "_dl_relocate_static_pie"])
+                 "__data_start", "__dso_handle","_IO_stdin_used","__DTOR_END__","__TMC_END__","__RLD_MAP","__x86.get_pc_thunk.bx",     
+                 "_dl_relocate_static_pie","__start"])
 
   exported_funcs = set()
   exported_vars = set()
@@ -1394,6 +1477,7 @@ def identify_program_entrypoints(func_eas):
           exported_vars.add(ea)
 
   DEBUG_POP()
+
   return exported_funcs, exported_vars
 
 def find_main_in_ELF_file():
@@ -1523,7 +1607,7 @@ if __name__ == "__main__":
 
   parser.add_argument(
       '--arch',
-      help='Name of the architecture. Valid names are x86, amd64.',
+      help='Name of the architecture. Valid names are x86, amd64, mipsl.',
       required=True)
 
   parser.add_argument(
@@ -1586,7 +1670,7 @@ if __name__ == "__main__":
     INIT_DEBUG_FILE(args.log_file)
     DEBUG("Debugging is enabled.")
 
-  addr_size = {"x86": 32, "amd64": 64, "aarch64": 64,}.get(args.arch, 0)                                            
+  addr_size = {"x86": 32, "amd64": 64, "aarch64": 64,"mipsl":32,"mipsb":32}.get(args.arch, 0)
   if addr_size != get_address_size_in_bits():
     DEBUG("Arch {} address size does not match IDA's available bitness {}! Did you mean to use idal64?".format(
         args.arch, get_address_size_in_bits()))
@@ -1620,12 +1704,19 @@ if __name__ == "__main__":
 
   # Turn off "automatically make offset" heuristic, and set some
   # other sane defaults.
-  idc.set_inf_attr(idc.INF_AF, 0xdfff)
-  idc.set_inf_attr(idc.INF_AF2, 0xfffd)
+  if IS_MIPS:
+    idc.set_inf_attr(idc.INF_AF, 0xdfff)
+    # we turn off macro instructions while lifting MIPS32 binaries
+    # the below line turns back on macro instructions, so to avoid
+    # that, it's only executed if the target architecture is not MIPS32
+ # idc.set_inf_attr(idc.INF_AF2, 0xfffd)
+  else:
+    idc.set_inf_attr(idc.INF_AF, 0xdfff)
+    idc.set_inf_attr(idc.INF_AF2, 0xfffd)
 
   # Ensure that IDA is done processing
   DEBUG("Using Batch mode.")
-  idaapi.auto_wait()
+  idaapi.auto_wait()  
 
   DEBUG("Starting analysis")
   try:
@@ -1647,10 +1738,10 @@ if __name__ == "__main__":
     DEBUG("Saving to: {0}".format(args.output.name))
     args.output.write(M.SerializeToString())
     args.output.close()
-
+    
   except:
     DEBUG(traceback.format_exc())
-  
+ 
   DEBUG("Done analysis!")
   idc.process_config_line("ABANDON_DATABASE=YES")
   idc.qexit(0)

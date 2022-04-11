@@ -114,6 +114,7 @@ def find_missing_strings_in_segment(seg_ea, seg_end_ea):
     next_head_ea = next_reasonable_head(next_ea, seg_end_ea)
     ea, next_ea = next_ea, next_head_ea
     item_size = idc.get_item_size(ea)
+    
     if is_jump_table_entry(ea):
       DEBUG("Found jump table at {:x}, jumping to {:x}".format(ea, next_ea))
       continue
@@ -145,7 +146,8 @@ def find_missing_strings_in_segment(seg_ea, seg_end_ea):
     # The references of variable are getting identified and converted
     # into string; avoid that
     if last_was_string and  is_reference(ea):
-      item_size = idc.ItemSize(ea)
+      # item_size = idc.ItemSize(ea)
+      item_size = idc.get_item_size(ea) # for IDA-Pro, v7.6
       next_ea = ea + item_size
       last_was_string = False
 
@@ -184,7 +186,8 @@ def find_missing_strings_in_segment(seg_ea, seg_end_ea):
     #   last_was_string = True
 
 def remaining_item_size(ea):
-  flags = idc.get_full_flags(ea)
+  flags = idc.get_full_flags(ea) 
+
   size = idc.get_item_size(ea)
   if idc.is_head(flags):
     return size
@@ -208,7 +211,7 @@ def find_missing_xrefs_in_segment(seg_ea, seg_end_ea, binary_is_pie):
 
   pointer_size = try_qwords and 8 or 4
   ea, next_ea = idc.BADADDR, seg_ea
-
+  
   missing_refs = []
 
   while next_ea < seg_end_ea:
@@ -314,12 +317,12 @@ def find_missing_xrefs_in_code_segment(seg_ea, seg_end_ea, binary_is_pie):
     # up a bunch in Windows binaries.
     flags = idc.get_full_flags(ea)
     if idc.is_data(flags):
-      next_ea = _next_code_or_jt_ea(ea + 1)
-      find_missing_xrefs_in_segment(ea, next_ea, binary_is_pie)
+      next_ea = _next_code_or_jt_ea(ea + 1) 
+      find_missing_xrefs_in_segment(ea, next_ea, binary_is_pie) 
       continue
 
     else:
-      next_ea = idc.next_head(ea)
+      next_ea = idc.next_head(ea) 
       continue
 
   DEBUG_POP()
@@ -328,7 +331,7 @@ def decode_segment_instructions(seg_ea, binary_is_pie):
   """Tries to find all jump tables ahead of time. A side-effect of this is to
   create a decoded instruction and jump table cache. The other side-effect is
   that the decoding of jump tables will *remove* some cross-references."""
-  seg_end_ea = idc.get_segm_end(seg_ea)
+  seg_end_ea = idc.get_segm_end(seg_ea) 
   for head_ea in idautils.Heads(seg_ea, seg_end_ea):
     inst, _ = decode_instruction(head_ea)
     get_instruction_references(inst, binary_is_pie)
