@@ -55,7 +55,7 @@ The first step to using McSema is to disassemble a program binary and produce a 
 
 `mcsema-disass` is organized into a [frontend](/tools/mcsema_disass/__main__.py) and backend. The front-end command accepts a `--disassembler` command-line argument that tells it what disassembly engine to use. In practice, this will always be a path to IDA Pro.
 
-The front-end is responsible for invoking the backend and disassembly engine. The IDA Pro [backend](/tools/mcsema_disass/ida7/get_cfg.py) is an IDA Python script invoked by `idal` or `idal64`, and will output a CFG file.
+The front-end is responsible for invoking the backend and disassembly engine. The IDA Pro [backend](/tools/mcsema_disass/ida/get_cfg.py) is an IDA Python script invoked by `idal` or `idal64`, and will output a CFG file.
 
 ### CFG files, a closer look
 
@@ -72,10 +72,10 @@ The most important high-level structures recorded in the CFG file are:
 
 The `mcsema-lift-M.m` command is used to lift CFG files to LLVM bitcode. The four most important arguments to `mcsema-lift` are:
 
-1. `--os`: The operating system of the code being lifted. In practice, each binary format is specific to an operating system. ELF files are for Linux, Mach-O files for macOS, and DLL files for Windows. This is one of `linux`, `macos`, or `windows`.
-2. `--arch`: The architecture of the code being lifted. This is one of `x86`, `x86_avx`, `amd64`, `amd64_avx`, or `aarch64`.
-3. `--cfg`: The path for the CFG file produced by `mcsema-disass`.
-4. `--output`: The path to the bitcode file to save/produce.
+  1.`--os`: The operating system of the code being lifted. In practice, each binary format is specific to an operating system. ELF files are for Linux, Mach-O files for macOS, and DLL files for Windows. This is one of `linux`, `macos`, or `windows`.
+  2.`--arch`: The architecture of the code being lifted. This is one of `x86`, `x86_avx`, `amd64`, `amd64_avx`, or `aarch64`.
+  3.`--cfg`: The path for the CFG file produced by `mcsema-disass`.
+  4.`--output`: The path to the bitcode file to save/produce.
 
 The above arguments instruct the [lifter](/tools/mcsema_lift/Lift.cpp) on how to configure the bitcode file.
 

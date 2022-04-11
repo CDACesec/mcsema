@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-#include <string.h>
 #include <cstdio>
+#include <string.h>
 
 class A {
- public:
+  public:
   char name[256];
 
   A(const char *nameIn) {
@@ -26,7 +26,9 @@ class A {
     strcpy(name, nameIn);
   }
 
-  ~A(void) { printf("Class A destructor!\n"); }
+  ~A(void) {
+    printf("Class A destructor!\n");
+  }
 };
 
 A global("Global");
@@ -35,3 +37,5 @@ int main(void) {
   printf("Variable name %s\n", global.name);
   return 0;
 }
+
+

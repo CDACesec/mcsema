@@ -1,21 +1,21 @@
 /*
- * Copyright (c) 2020 Trail of Bits, Inc.
+ * Copyright (c) 2017 Trail of Bits, Inc.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-#pragma once
+#ifndef MCSEMA_BC_INSTRUCTION_H_
+#define MCSEMA_BC_INSTRUCTION_H_
 
 #include <cstdint>
 
@@ -36,7 +36,7 @@ class IntrinsicTable;
 
 namespace mcsema {
 
-struct NativeInstructionXref;
+struct NativeXref;
 struct TranslationContext;
 
 class InstructionLifter : public remill::InstructionLifter {
@@ -47,37 +47,45 @@ class InstructionLifter : public remill::InstructionLifter {
   virtual ~InstructionLifter(void);
 
   // Lift a single instruction into a basic block.
-  remill::LiftStatus
-  LiftIntoBlock(remill::Instruction &inst, llvm::BasicBlock *block,
-                llvm::Value *state_ptr, bool is_delayed) override;
+  remill::LiftStatus LiftIntoBlock(remill::Instruction &inst,
+                                   llvm::BasicBlock *block, bool is_delayed) override;
 
  protected:
+
   // Lift an immediate operand.
-  llvm::Value *
-  LiftImmediateOperand(remill::Instruction &inst, llvm::BasicBlock *block,
-                       llvm::Argument *arg, remill::Operand &op) override;
+  llvm::Value *LiftImmediateOperand(
+      remill::Instruction &inst, llvm::BasicBlock *block,
+      llvm::Argument *arg, remill::Operand &op) override;
 
   // Lift an indirect memory operand to a value.
-  llvm::Value *LiftAddressOperand(remill::Instruction &inst,
-                                  llvm::BasicBlock *block,
-                                  llvm::Value *state_ptr, llvm::Argument *arg,
-                                  remill::Operand &mem) override;
+  llvm::Value *LiftAddressOperand(
+      remill::Instruction &inst, llvm::BasicBlock *block,
+      llvm::Argument *arg, remill::Operand &mem) override;
+
+  // Lift a register operand to a value.
+  llvm::Value *LiftRegisterOperand(
+      remill::Instruction &inst, llvm::BasicBlock *block,
+      llvm::Argument *arg, remill::Operand &reg) override;
 
  private:
-  llvm::Value *GetAddress(const NativeInstructionXref *cfg_xref);
+
+  llvm::Value *GetAddress(const NativeXref *cfg_xref);
+  llvm::Value *GetMaskedAddress(const NativeXref *cfg_xref);
 
   TranslationContext &ctx;
 
-  remill::Instruction *inst_ptr{nullptr};
-  llvm::BasicBlock *block{nullptr};
+  remill::Instruction *inst_ptr;
+  llvm::BasicBlock *block;
 
-  llvm::Value *mem_ref{nullptr};
-  llvm::Value *disp_ref{nullptr};
-  llvm::Value *imm_ref{nullptr};
+  llvm::Value *mem_ref;
+  llvm::Value *disp_ref;
+  llvm::Value *imm_ref;
 
-  bool mem_ref_used{false};
-  bool disp_ref_used{false};
-  bool imm_ref_used{false};
+  bool mem_ref_used;
+  bool disp_ref_used;
+  bool imm_ref_used;
 };
 
 }  // namespace mcsema
+
+#endif  // MCSEMA_BC_INSTRUCTION_H_

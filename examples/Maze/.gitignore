@@ -1,5 +1,2 @@
-build/
-installed/
-bc/
+bc/*
 klee-*
-*.log

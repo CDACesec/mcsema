@@ -42,7 +42,6 @@ def execute(args, command_args):
   env["HOME"] = os.path.expanduser('~')
   env["IDA_PATH"] = os.path.dirname(args.disassembler)
   env["PYTHONPATH"] = os.path.dirname(ida_dir)
-  env["DISPLAY"] = ":0"
   if "SystemRoot" in os.environ:
     env["SystemRoot"] = os.environ["SystemRoot"]
 
@@ -56,12 +55,8 @@ def execute(args, command_args):
   script_cmd.append(args.arch)
   script_cmd.append("--os")
   script_cmd.append(args.os)
-  if args.rebase:
-    script_cmd.append("--rebase")
-    script_cmd.append(str(args.rebase))
-  if args.entrypoint is not None and len(args.entrypoint):
-    script_cmd.append("--entrypoint")
-    script_cmd.append(args.entrypoint)
+  script_cmd.append("--entrypoint")
+  script_cmd.append(args.entrypoint)
   script_cmd.extend(command_args)  # Extra, script-specific arguments.
 
   cmd = []
@@ -69,6 +64,8 @@ def execute(args, command_args):
   cmd.append("-B")  # Batch mode.
   cmd.append("-S\"{}\"".format(" ".join(script_cmd)))
   cmd.append(quote(args.binary))
+
+     
 
   try:
     with open(os.devnull, "w") as devnull:

@@ -1,23 +1,21 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2020 Trail of Bits, Inc.
+# Copyright (c) 2017 Trail of Bits, Inc.
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as
-# published by the Free Software Foundation, either version 3 of the
-# License, or (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+#   http://www.apache.org/licenses/LICENSE-2.0
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import idautils
 import idaapi
-import ida_funcs
 import idc
 import sys
 import os
@@ -34,23 +32,15 @@ from table import *
 from flow import *
 from refs import *
 from segment import *
+from collect_variable import *
 from exception import *
 
-# Bring in Anvill
-try:
-  import anvill
-except:
-  import anvill_compat as anvill
-
-ANVILL_PROGRAM = None
-
 #hack for IDAPython to see google protobuf lib
-_VERSION_NUM = "{}.{}".format(sys.version_info[0], sys.version_info[1])
-if os.path.isdir('/usr/lib/python{}/dist-packages'.format(_VERSION_NUM)):
-  sys.path.append('/usr/lib/python{}/dist-packages'.format(_VERSION_NUM))
+if os.path.isdir('/usr/lib/python2.7/dist-packages'):
+  sys.path.append('/usr/lib/python2.7/dist-packages')
 
-if os.path.isdir('/usr/local/lib/python{}/dist-packages'.format(_VERSION_NUM)):
-  sys.path.append('/usr/local/lib/python{}/dist-packages'.format(_VERSION_NUM))
+if os.path.isdir('/usr/local/lib/python2.7/dist-packages'):
+  sys.path.append('/usr/local/lib/python2.7/dist-packages')
 
 tools_disass_ida_dir = os.path.dirname(__file__)
 tools_disass_dir = os.path.dirname(tools_disass_ida_dir)
@@ -82,10 +72,6 @@ EMAP = {}
 # Map of external variable names to their sizes, in bytes.
 EMAP_DATA = {}
 
-# Map of the functions which are forced to be extern and does not require to
-# be recovered.
-FORCED_EXTERNAL_EMAP = {}
-
 # `True` if we are getting the CFG of a position independent executable. This
 # affects heuristics like trying to turn immediate operands in instructions
 # into references into the data.
@@ -102,7 +88,7 @@ OS_NAME = ""
 # e.g. `@@QEAU_..`, `@@AEAV..`, though these are likely for name mangling.
 EXTERNAL_NAMES = ("@@GLIBC_", "@@GLIBCXX_", "@@CXXABI_", "@@GCC_")
 
-_NOT_ELF_BEGIN_EAS = (0xffffffff, 0xffffffffffffffff)
+_NOT_ELF_BEGIN_EAS = (0xffffffffL, 0xffffffffffffffffL)
 
 # Returns `True` if this is an ELF binary (as opposed to an ELF object file).
 def is_linked_ELF_program():
@@ -143,7 +129,7 @@ _FIXED_EXTERNAL_NAMES = {}
 def demangled_name(name):
   """Tries to demangle a functin name."""
   try:
-    dname = idc.demangle_name(name, idc.get_inf_attr(INF_SHORT_DN))
+    dname = idc.Demangle(name, idc.GetLongPrm(INF_SHORT_DN))
     if dname and len(dname) and "::" not in dname:
       dname = dname.split("(")[0]
       dname = dname.split(" ")[-1]
@@ -304,44 +290,6 @@ def parse_os_defs_file(df):
 
   df.close()
 
-def parse_fextern_defs_file(df):
-  """Parse the file containing forced external function which
-  does not need to be recovered.
-  """
-  global FORCED_EXTERNAL_EMAP
-
-  for l in df.readlines():
-    #skip comments / empty lines
-    l = l.strip()
-    if not l or l[0] == "#":
-      continue
-
-    fname = args = conv = ret = None
-    line_args = l.split()
-
-    if len(line_args) == 4:
-      (fname, args, conv, ret) = line_args
-
-    if conv == "C":
-      realconv = CFG_pb2.ExternalFunction.CallerCleanup
-    elif conv == "E":
-      realconv = CFG_pb2.ExternalFunction.CalleeCleanup
-    elif conv == "F":
-      realconv = CFG_pb2.ExternalFunction.FastCall
-    else:
-      DEBUG("ERROR: Unknown calling convention for forced extern : {}".format(l))
-      continue
-
-    if ret not in "YN":
-      DEBUG("ERROR: Unknown return type {} in {}".format(ret, l))
-      continue
-
-    ea = idc.get_name_ea_simple(fname)
-
-    FORCED_EXTERNAL_EMAP[fname] = (int(args), realconv, ret, None)
-
-  df.close()
-
 def is_external_reference(ea):
   """Returns `True` if `ea` references external data."""
   return is_external_segment(ea) \
@@ -383,7 +331,67 @@ _NOT_ELF_THUNKS = set()
 _INVALID_THUNK = (False, idc.BADADDR, "")
 _INVALID_THUNK_ADDR = (False, idc.BADADDR)
 
-# NOTE(pag): `is_ELF_thunk_by_structure` is arch-specific.
+def is_ELF_thunk_by_structure(ea):
+  """Try to manually identify an ELF thunk by its structure."""
+  global _INVALID_THUNK_ADDR
+
+  if ".plt" not in idc.get_segm_name(ea).lower():
+    return _INVALID_THUNK_ADDR
+
+  # Scan through looking for a branch, either direct or indirect.
+  inst = None
+  for i in range(4):  # 1 is good enough for x86, 4 for aarch64.
+    inst, _ = decode_instruction(ea)
+    if not inst:
+      return _INVALID_THUNK_ADDR
+    # elif is_direct_jump(inst):
+    #   ea = get_direct_branch_target(inst)
+    #   inst = None
+    elif is_indirect_jump(inst) or is_direct_jump(inst):
+      ea = inst.ea
+      break
+    else:
+      ea = inst.ea + inst.size
+      inst = None
+
+  if not inst:
+    return _INVALID_THUNK_ADDR
+
+  target_ea = get_reference_target(inst.ea)
+  if ".got.plt" == idc.get_segm_name(target_ea).lower():
+    target_ea = get_reference_target(target_ea)
+
+  # For AArch64, the thunk structure is something like:
+  #     .plt:000400470 .atoi
+  #     .plt:000400470    ADRP            X16, #off_411000@PAGE
+  #     .plt:000400474    LDR             X17, [X16,#off_411000@PAGEOFF]
+  #     .plt:000400478    ADD             X16, X16, #off_411000@PAGEOFF
+  #     .plt:00040047C    BR              X17 ; atoi
+  #
+  # With:
+  #
+  #     extern:000411070 ; int atoi(const char *nptr)
+  #     extern:000411070                 IMPORT atoi
+  
+
+  # For x86, the thunk structure is something like:
+  #   
+  #     .plt:00041F10 _qsort      proc near         
+  #     .plt:00041F10         jmp   cs:off_31F388
+  #     .plt:00041F10 _qsort      endp
+  #     
+  # With:
+  # 
+  #     .got.plt:0031F388 off_31F388    dq offset qsort
+  #
+  # With
+  #     extern:0031F388 ; void qsort(void *base, ...)
+  #     extern:0031F388                 extrn qsort:near 
+
+  if is_invalid_ea(target_ea):
+    return _INVALID_THUNK_ADDR
+  
+  return True, target_ea
 
 def is_thunk_by_flags(ea):
   """Try to identify a thunk based off of the IDA flags. This isn't actually
@@ -453,14 +461,17 @@ def try_get_thunk_name(ea):
     name = get_function_name(target_ea)
     name = undecorate_external_name(name)
     name = get_true_external_name(name)
-    # if the elf thunk name is not in external table
-    if name not in EMAP:
-      DEBUG("WARNING: Adding {} as external function".format(name))
-      EMAP[name] = (16, CFG_pb2.ExternalFunction.CallerCleanup, "N", None)
-
     ret = (is_thunk, target_ea, name)
     _ELF_THUNKS[ea] = ret
     return ret
+
+def is_start_of_function(ea):
+  """Returns `True` if `ea` is the start of a function."""
+  if not is_code(ea):
+    return False
+
+  name = idc.GetTrueName(ea) or idc.get_func_name(ea)
+  return ea == idc.get_name_ea_simple(name)
 
 _REFERENCE_OPERAND_TYPE = {
   Reference.IMMEDIATE: CFG_pb2.CodeReference.ImmediateOperand,
@@ -469,9 +480,37 @@ _REFERENCE_OPERAND_TYPE = {
   Reference.CODE: CFG_pb2.CodeReference.ControlFlowOperand,
 }
 
+def reference_target_type(ref):
+  """Sometimes code references into the GOT would be treated as data
+  references. We fall back onto our external maps as an oracle for
+  what the type should really be. This has happened with `pcre_free`
+  references from Apache."""
+  if ref.ea in EXTERNAL_VARS_TO_RECOVER:
+    return CFG_pb2.CodeReference.DataTarget
+
+  # TODO(pag): 
+  #elif ref.ea in EXTERNAL_FUNCS_TO_RECOVER:
+  #  return CFG_pb2.CodeReference.CodeTarget
+
+  elif is_code(ref.ea):
+    return CFG_pb2.CodeReference.CodeTarget
+  else:
+    return CFG_pb2.CodeReference.DataTarget
+
 def reference_operand_type(ref):
   global _REFERENCE_OPERAND_TYPE
   return _REFERENCE_OPERAND_TYPE[ref.type]
+
+def reference_location(ref):
+  if ref.ea in EXTERNAL_VARS_TO_RECOVER:
+    return CFG_pb2.CodeReference.External
+  elif ref.ea in EXTERNAL_FUNCS_TO_RECOVER:
+    return CFG_pb2.CodeReference.External
+  elif is_external_segment_by_flags(ref.ea):
+    DEBUG("WARNING: Reference to {:x} is in an external segment, but is not an external var or function".format(ref.ea))
+    return CFG_pb2.CodeReference.External
+  else:
+    return CFG_pb2.CodeReference.Internal
 
 def referenced_name(ref):
   if ref.ea in EXTERNAL_VARS_TO_RECOVER:
@@ -481,11 +520,21 @@ def referenced_name(ref):
   else:
     return get_true_external_name(ref.symbol)
 
+_TARGET_NAME = {
+  CFG_pb2.CodeReference.CodeTarget: "code",
+  CFG_pb2.CodeReference.DataTarget: "data",
+}
+
 _OPERAND_NAME = {
   CFG_pb2.CodeReference.ImmediateOperand: "imm",
   CFG_pb2.CodeReference.MemoryDisplacementOperand: "disp",
   CFG_pb2.CodeReference.MemoryOperand: "mem",
   CFG_pb2.CodeReference.ControlFlowOperand: "flow",
+}
+
+_LOCATION_NAME = {
+  CFG_pb2.CodeReference.External: "external",
+  CFG_pb2.CodeReference.Internal: "internal",
 }
 
 def format_instruction_reference(ref):
@@ -497,11 +546,14 @@ def format_instruction_reference(ref):
     mask_begin = "("
     mask_end = " & {:x})".format(ref.mask)
 
-  return "({} {}{:x}{})".format(
+  return "({} {} {} {}{:x}{} {})".format(
+      _TARGET_NAME[ref.target_type],
       _OPERAND_NAME[ref.operand_type],
+      _LOCATION_NAME[ref.location],
       mask_begin,
       ref.ea,
-      mask_end)
+      mask_end,
+      ref.HasField('name') and ref.name or "")
 
 def recover_instruction_references(I, inst, addr, refs):
   """Add the memory/code reference information from this instruction
@@ -583,14 +635,21 @@ def recover_instruction_references(I, inst, addr, refs):
         ref.ea = thunk_target_ea
         ref.symbol = thunk_name
 
+    target_type = reference_target_type(ref)
+    location = reference_location(ref)
+
+    addrs = set()
     R = I.xrefs.add()
     R.ea = ref.ea
     if ref.mask:
       R.mask = ref.mask
-    if ref.imm_val:
-      R.ea = ref.imm_val
 
     R.operand_type = reference_operand_type(ref)
+    R.target_type = target_type
+    R.location = location
+    name = referenced_name(ref)
+    if name:
+      R.name = name.format('utf-8')
     
     debug_info.append(format_instruction_reference(R))
 
@@ -603,6 +662,11 @@ def recover_instruction_offset_table(I, table):
   R = I.xrefs.add()
   R.ea = table.offset
   R.operand_type = CFG_pb2.CodeReference.OffsetTable
+  R.target_type = CFG_pb2.CodeReference.DataTarget
+  R.location = CFG_pb2.CodeReference.Internal
+  name = get_symbol_name(table.offset * table.offset_mult, allow_dummy=False)
+  if name:
+    R.name = name.format('utf-8')
 
 def try_recovery_external_flow(I, inst, refs):
   """We have somehting like:
@@ -622,40 +686,39 @@ def try_recovery_external_flow(I, inst, refs):
 
   R = I.xrefs.add()
   R.ea = ref.ea
+  R.name = EXTERNAL_FUNCS_TO_RECOVER[ref.ea].format('utf-8')
   R.operand_type = CFG_pb2.CodeReference.ControlFlowOperand
+  R.target_type = CFG_pb2.CodeReference.CodeTarget
+  R.location = CFG_pb2.CodeReference.External
 
   if is_indirect_jump(inst):
-    DEBUG("Tail-calls external {}".format(R.ea))
+    DEBUG("Tail-calls external {}".format(R.name))
   else:
-    DEBUG("Calls external {}".format(R.ea))
+    DEBUG("Calls external {}".format(R.name))
 
-# Groups preserved register sets that save/restore the same set of registers.
-_REG_SETS = {}
-
-def recover_instruction(M, F, B, ea):
+def recover_instruction(M, B, ea):
   """Recover an instruction, adding it to its parent block in the CFG."""
-  global _REG_SETS
-
   inst, inst_bytes = decode_instruction(ea)
 
   I = B.instructions.add()
   I.ea = ea  # May not be `inst.ea` because of prefix coalescing.
+  I.bytes = inst_bytes
 
-  xrefs = get_instruction_references(inst, PIE_MODE)
-  recover_instruction_references(I, inst, ea, xrefs)
-  regs_saved = recover_preserved_regs(M, F, inst, xrefs, _REG_SETS)
+  refs = get_instruction_references(inst, PIE_MODE)
+  recover_instruction_references(I, inst, ea, refs)
+
+  if is_noreturn_inst(inst):
+    I.local_noreturn = True
+
 
   DEBUG_PUSH()
   table = get_jump_table(inst, PIE_MODE)
-  if table and table.offset and \
+  if table and table.offset and \ 
      not is_invalid_ea(table.offset * table.offset_mult):
     recover_instruction_offset_table(I, table)
 
   if not table:
-    try_recovery_external_flow(I, inst, xrefs)
-
-  if regs_saved and len(regs_saved):
-    DEBUG("Added save record: {}".format(regs_saved))
+    try_recovery_external_flow(I, inst, refs)
 
   DEBUG_POP()
 
@@ -676,25 +739,19 @@ def recover_basic_block(M, F, block_ea):
   B.ea = block_ea
 
   DEBUG_PUSH()
-
-  B.is_referenced_by_data = False
-  if is_jump_table_target(block_ea) or \
-     idaapi.get_first_dref_to(block_ea) != idc.BADADDR or \
-     has_our_dref_to(block_ea):
-    DEBUG("Referenced by data")
-    B.is_referenced_by_data = True
-
   I = None
   for inst_ea in inst_eas:
-    I = recover_instruction(M, F, B, inst_ea)
+    I = recover_instruction(M, B, inst_ea)
     # Get the landing pad associated with the instructions;
     # 0 if no landing pad associated
     if RECOVER_EHTABLE is True and I:
       I.lp_ea = get_exception_landingpad(F, inst_ea)
 
   DEBUG_PUSH()
-
-  if len(succ_eas) > 0:
+  if I and I.local_noreturn:
+    DEBUG("Does not return")
+  
+  elif len(succ_eas) > 0:
     B.successor_eas.extend(succ_eas)
     DEBUG("Successors: {}".format(", ".join("{0:x}".format(i) for i in succ_eas)))
   else:
@@ -712,91 +769,23 @@ def analyze_jump_table_targets(inst, new_eas, new_func_eas):
     return
 
   for entry_addr, entry_target in table.entries.items():
-    new_eas.add(entry_target)
     if is_start_of_function(entry_target):
       DEBUG("  Jump table {:x} entry at {:x} references function at {:x}".format(
           table.table_ea, entry_addr, entry_target))
-      new_func_eas.append(entry_target)
+      new_func_eas.add(entry_target)
     else:
       DEBUG("  Jump table {:x} entry at {:x} references block at {:x}".format(
           table.table_ea, entry_addr, entry_target))
-
-def recover_value_spec(V, spec):
-  """Recovers an Anvill value specification into the CFG proto format."""
-  V.type = spec["type"]
-
-  if "name" in spec and len(spec["name"]):
-    V.name = spec["name"]
-
-  if "register" in spec:
-    V.register = spec["register"]
-  elif "memory" in spec:
-    mem_spec = spec["memory"]
-    V.memory.register = mem_spec["register"]
-    if mem_spec["offset"]:
-      V.memory.offset = mem_spec["offset"]
-
-def recover_function_spec(F, spec):
-  """Recovers most of an Anvill function specification into the CFG proto format."""
-  D = F.decl
-
-  if "is_noreturn" in spec:
-    D.is_noreturn = spec["is_noreturn"]
-  else:
-    D.is_noreturn = False
-  
-  if "is_variadic" in spec:
-    D.is_variadic = spec["is_variadic"]
-  else:
-    D.is_variadic = False
-
-  if "parameters" in spec:
-    for param in spec["parameters"]:
-      P = D.parameters.add()
-      recover_value_spec(P, param)
-
-  if "return_values" in spec:
-    for ret_val in spec["return_values"]:
-      V = D.return_values.add()
-      recover_value_spec(V, ret_val)
-
-  if "calling_convention" in spec:
-    D.calling_convention = spec["calling_convention"]
-  else:
-    D.calling_convention = 0
-
-  recover_value_spec(D.return_address, spec["return_address"])
-  recover_value_spec(D.return_stack_pointer, spec["return_stack_pointer"])
-
-def try_get_anvill_func(func_ea, is_thunk, thunk_target_ea):
-  """Try to get the Anvill Function object for the function associated with
-  `func_ea`, and if it's a thunk, then `thunk_target_ea`."""
-  
-  if is_thunk:
-    try:
-      if ANVILL_PROGRAM.add_function_declaration(thunk_target_ea):
-        return ANVILL_PROGRAM.get_function(thunk_target_ea)
-    except Exception as e:
-      pass
-
-  try:
-    if ANVILL_PROGRAM.add_function_declaration(func_ea):
-      return ANVILL_PROGRAM.get_function(func_ea)
-  except:
-    pass
-  
-  return None
+      new_eas.add(entry_target)
 
 _RECOVERED_FUNCS = set()
 
-def recover_function(M, func_ea, new_func_eas, entrypoints, prev_F, processed_blocks):
+def recover_function(M, func_ea, new_func_eas, entrypoints):
   """Decode a function and store it, all of its basic blocks, and all of
   their instructions into the CFG file."""
   global _RECOVERED_FUNCS
-  global ANVILL_PROGRAM
-  global EXTERNAL_FUNCS_TO_RECOVER
   if func_ea in _RECOVERED_FUNCS:
-    return prev_F
+    return
 
   _RECOVERED_FUNCS.add(func_ea)
 
@@ -804,49 +793,33 @@ def recover_function(M, func_ea, new_func_eas, entrypoints, prev_F, processed_bl
   # as the start of the function.
   if not is_start_of_function(func_ea): # and func_ea not in entrypoints:
     DEBUG("{:x} is not a function! Not recovering.".format(func_ea))
-    return prev_F
+    return
 
-  # Double check to see if it looks like a thunk, and if so, we'll just
-  # re-direct to that.
-  is_thunk, thunk_target_ea, name = try_get_thunk_name(func_ea)
-  if is_thunk and name and is_external_segment(thunk_target_ea):
-    EXTERNAL_FUNCS_TO_RECOVER[func_ea] = name
-    DEBUG("Deferring recovery of thunk {:x}, resolved to external {}".format(
-        func_ea, name))
-    return prev_F
-
-  name = get_symbol_name(func_ea)
-  processed_blocks.clear()
   F = M.funcs.add()
   F.ea = func_ea
   F.is_entrypoint = (func_ea in entrypoints)
-
-  if not name:
-    DEBUG("Recovering {:x}".format(func_ea))
-  else:
+  name = get_symbol_name(func_ea)
+  if name:
+    DEBUG("Recovering {} at {:x}".format(name, func_ea))
     F.name = name.format('utf-8')
-    DEBUG("Recovering {} at {:x}".format(F.name, func_ea))
-
-    # Try to get the Anvill representation of this function.
-    anvill_func = try_get_anvill_func(func_ea, is_thunk, thunk_target_ea)
-    if anvill_func:
-      recover_function_spec(F, anvill_func.proto())
+  else:
+    DEBUG("Recovering {:x}".format(func_ea))
 
   DEBUG_PUSH()
-
   # Update the protobuf with the recovered eh_frame entries
   if RECOVER_EHTABLE is True:
     recover_exception_entries(F, func_ea)
-  block_eas, term_insts = analyse_subroutine(func_ea, PIE_MODE)
+  blockset, term_insts = analyse_subroutine(func_ea, PIE_MODE)
 
   for term_inst in term_insts:
     if get_jump_table(term_inst, PIE_MODE):
       DEBUG("Terminator inst {:x} in func {:x} is a jump table".format(
           term_inst.ea, func_ea))
-      analyze_jump_table_targets(term_inst, block_eas, new_func_eas)
+      analyze_jump_table_targets(term_inst, blockset, new_func_eas)
   
-  while len(block_eas) > 0:
-    block_ea = block_eas.pop()
+  processed_blocks = set()
+  while len(blockset) > 0:
+    block_ea = blockset.pop()
     if block_ea in processed_blocks:
       DEBUG("ERROR: Attempting to add same block twice: {0:x}".format(block_ea))
       continue
@@ -854,14 +827,16 @@ def recover_function(M, func_ea, new_func_eas, entrypoints, prev_F, processed_bl
     processed_blocks.add(block_ea)
     recover_basic_block(M, F, block_ea)
 
+  if TO_RECOVER["stack_var"]:
+    recover_variables(F, func_ea, processed_blocks)
+
   DEBUG_POP()
-  return F
 
 def find_default_function_heads():
   """Loop through every function, to discover the heads of all blocks that
   IDA recognizes. This will populate some global sets in `flow.py` that
   will help distinguish block heads."""
-  func_eas = []
+  func_heads = set()
   for seg_ea in idautils.Segments():
     seg_type = idc.get_segm_attr(seg_ea, idc.SEGATTR_TYPE)
     if seg_type != idc.SEG_CODE:
@@ -869,9 +844,9 @@ def find_default_function_heads():
 
     for func_ea in idautils.Functions(seg_ea, idc.get_segm_end(seg_ea)):
       if is_code_by_flags(func_ea):
-        func_eas.append(func_ea)
+        func_heads.add(func_ea)
 
-  return func_eas
+  return func_heads
 
 def recover_region_variables(M, S, seg_ea, seg_end_ea, exported_vars):
   """Look for named locations pointing into the data of this segment, and
@@ -933,8 +908,8 @@ def recover_region_cross_references(M, S, seg_ea, seg_end_ea):
     # of a basic block. Our goal is thus to preserve the original values,
     # and implement the switch in terms of those original values on the
     # LLVM side of things.
-    #if is_jump_table_entry(ea):
-    #  continue
+    if is_jump_table_entry(ea):
+      continue
 
     # Skip over instructions.
     if is_code_seg:
@@ -984,10 +959,12 @@ def recover_region_cross_references(M, S, seg_ea, seg_end_ea):
       X.ea = ea
       X.width = xref_width
       X.target_ea = target_ea
-      target_name = get_symbol_name(target_ea)
+      X.target_name = get_symbol_name(target_ea)
+      X.target_is_code = is_code(target_ea) or \
+                         target_ea in EXTERNAL_FUNCS_TO_RECOVER
 
       if is_external_segment(X.target_ea):
-        target_name = get_true_external_name(target_name)
+        X.target_name = get_true_external_name(X.target_name)
 
       # A cross-reference to some TLS data. Because each thread has its own
       # instance of the data, this reference ends up actually being an offset
@@ -997,16 +974,16 @@ def recover_region_cross_references(M, S, seg_ea, seg_end_ea):
       if is_tls(target_ea):
         X.target_fixup_kind = CFG_pb2.DataReference.OffsetFromThreadBase
         DEBUG("{}-byte TLS offset at {:x} to {:x} ({})".format(
-            X.width, ea, target_ea, target_name))
+            X.width, ea, target_ea, X.target_name))
 
       # A cross-reference to a 'single' thing, where the fixup that we create
       # will be an absolute address to the targeted variable/function.
       else:
         X.target_fixup_kind = CFG_pb2.DataReference.Absolute
         DEBUG("{}-byte reference at {:x} to {:x} ({})".format(
-            X.width, ea, target_ea, target_name))
+            X.width, ea, target_ea, X.target_name))
 
-        try_identify_as_external_function(target_ea, target_name)
+        try_identify_as_external_function(target_ea, X.target_name)
 
 
 def recover_region(M, region_name, region_ea, region_end_ea, exported_vars):
@@ -1164,10 +1141,8 @@ def recover_regions(M, exported_vars, global_vars=[]):
     seg_name = idc.get_segm_name(seg_ea)
     for begin_ea, end_ea in zip(parts[:-1], parts[1:]):
       region_name = seg_name
-      if begin_ea in seg_names and \
-        not is_runtime_external_data_reference(begin_ea):
+      if begin_ea in seg_names:
         region_name = seg_names[begin_ea]
-
       recover_region(M, region_name, begin_ea, end_ea, exported_vars)
 
 def recover_external_functions(M):
@@ -1176,19 +1151,6 @@ def recover_external_functions(M):
   global EXTERNAL_FUNCS_TO_RECOVER, WEAK_SYMS, EMAP
 
   for ea, name in EXTERNAL_FUNCS_TO_RECOVER.items():
-    
-    # Try to fix up the name. Sometimes the thunks have names like `_setlocale`,
-    # whereas the external will have the proper `setlocate` name.
-    is_thunk, thunk_target_ea, thunk_name = try_get_thunk_name(ea)
-    if is_thunk and thunk_name:
-      name = thunk_name
-
-    if name not in EMAP and not try_infer_func_for_emap(name, ea):
-      DEBUG("ERROR: Not recovering external function {} at {:x}; info not in EMAP".format(name, ea))
-      return
-    
-    anvill_func = try_get_anvill_func(ea, False, ea)
-
     DEBUG("Recovering extern function {} at {:x}".format(name, ea))
     args, conv, ret, sign = EMAP[name]
     E = M.external_funcs.add()
@@ -1200,14 +1162,9 @@ def recover_external_functions(M):
     E.no_return = ret == 'Y'
 
     # TODO(pag): This should probably reflect whether or not the function
-    #            actually returns something, rather than simply does not
-    #            return (e.g. `abort`).
+    #      actually returns something, rather than simply does not
+    #      return (e.g. `abort`).
     E.has_return = ret == 'N'
-
-    if anvill_func:
-      recover_function_spec(E, anvill_func.proto())
-    else:
-      recover_function_spec_from_arch(E)
 
 def recover_external_variables(M):
   """Reover the named external variables (e.g. `stdout`) that are referenced
@@ -1233,14 +1190,6 @@ def recover_external_symbols(M):
   recover_external_functions(M)
   recover_external_variables(M)
 
-def is_forced_external(ea):
-  name = get_function_name(ea)
-  return (name in FORCED_EXTERNAL_EMAP)
-
-def add_fextern_to_emap(name, ea):
-  if name in FORCED_EXTERNAL_EMAP:
-    EMAP[name] = FORCED_EXTERNAL_EMAP[name]
-
 def try_identify_as_external_function(ea, name=None):
   """Try to identify a function as being an external function."""
   global EXTERNAL_FUNCS_TO_RECOVER, EMAP
@@ -1262,10 +1211,6 @@ def try_identify_as_external_function(ea, name=None):
   elif is_external_segment(ea):
     name = get_true_external_name(get_function_name(ea))
 
-  elif is_forced_external(ea):
-    name = get_function_name(ea)
-    add_fextern_to_emap(name, ea)
-
   elif not name:
     return False
 
@@ -1275,74 +1220,12 @@ def try_identify_as_external_function(ea, name=None):
     INTERNAL_THUNK_EAS[ea] = impl_ea
     return False
 
-  # If we don't have info about this function from our std defs file, then
-  # try to figure it out from IDA's internal info.
   if name not in EMAP:
-    if not try_infer_func_for_emap(name, ea):
-      return False
-    
-    # args, conv, ret, sign
+    return False
 
   DEBUG("Function at {:x} is the external function {}".format(ea, name))
   EXTERNAL_FUNCS_TO_RECOVER[ea] = name
   return True
-
-def try_infer_func_for_emap(name, ea):
-  """Tries to infer function information to add to the EMAP, which stores
-  our external info. This uses IDA's internal type info."""
-  global _FIXED_EXTERNAL_NAMES
-  global WEAK_SYMS
-
-  is_thunk, thunk_target_ea, thunk_name = try_get_thunk_name(ea)
-  if not is_thunk:
-    return False
-
-  type_info = idaapi.tinfo_t()
-  if not idaapi.get_tinfo2(ea, type_info):
-    if thunk_target_ea != ea:
-      ea = thunk_target_ea
-      type_info = idaapi.tinfo_t()
-      if not idaapi.get_tinfo2(ea, type_info):
-        return False
-    else:
-      return False
-
-  func_data = idaapi.func_type_data_t()
-  if not type_info.get_func_details(func_data):
-    return False
-
-  num_args = func_data.size()
-  is_noreturn = 'N'
-  if is_noreturn_function(ea):
-    is_noreturn = 'Y'
-
-  conv = CFG_pb2.ExternalFunction.CallerCleanup
-  if func_data.cc & idaapi.CM_CC_STDCALL:
-    conv = CFG_pb2.ExternalFunction.CalleeCleanup
-  elif func_data.cc & idaapi.CM_CC_FASTCALL:
-    conv = CFG_pb2.ExternalFunction.FastCall
-
-  EMAP[name] = (num_args, conv, is_noreturn, None)
-
-  imp_name = "__imp_{}".format(name)
-  if idc.get_name_ea_simple(imp_name):
-    _FIXED_EXTERNAL_NAMES[imp_name] = name
-    WEAK_SYMS.add(name)
-    WEAK_SYMS.add(imp_name)
-
-  return True
-
-def force_add_func_to_emap(target_name, ea):
-  """Forcefully adds a function to the EMAP."""
-  DEBUG("WARNING: Adding external {} at {:x} as an external code reference".format(
-      target_name, ea))
-  EMAP[target_name] = (16, CFG_pb2.ExternalFunction.CallerCleanup, "N", None)
-
-  imp_name = "__imp_{}".format(target_name)
-  if idc.get_name_ea_simple(imp_name):
-    _FIXED_EXTERNAL_NAMES[imp_name] = target_name
-    WEAK_SYMS.add(target_name)
-    WEAK_SYMS.add(imp_name)
 
 def identify_thunks(func_eas):
   DEBUG("Looking for thunks")
@@ -1386,8 +1269,15 @@ def identify_external_symbols():
           #            likely point into the `extern` section. Individual
           #            entries in the extern section can have 
           if idc.is_code(target_flags):
-            if not try_infer_func_for_emap(target_name, ea):
-              force_add_func_to_emap(target_name, ea)
+            DEBUG("WARNING: Adding external {} at {:x} as an external code reference".format(
+                target_name, ea))
+            EMAP[target_name] = (16, CFG_pb2.ExternalFunction.CallerCleanup, "N", None)
+
+            imp_name = "__imp_{}".format(target_name)
+            if idc.get_name_ea_simple(imp_name):
+              _FIXED_EXTERNAL_NAMES[imp_name] = target_name
+              WEAK_SYMS.add(target_name)
+              WEAK_SYMS.add(imp_name)
 
           # The 
           else:
@@ -1445,7 +1335,7 @@ def identify_external_symbols():
         # file with only one global variable `FILE *fp = stdout;`. Some versions
         # of IDA will treat the local copy of `stdout` as being the symbol
         # `__bss_start`.
-        comment = ida_bytes.get_cmt(ea, 0) or ""
+        comment = idc.GetCommentEx(ea, 0) or ""
         for comment_line in comment.split("\n"):
           comment_line = comment_line.replace(";", "").strip()
           found_name = get_true_external_name(comment_line, demangle=is_code(ea))
@@ -1469,21 +1359,9 @@ def identify_program_entrypoints(func_eas):
   DEBUG("Looking for entrypoints")
   DEBUG_PUSH()
 
-  exclude = set(["_start", "__libc_csu_fini", "__libc_csu_init", 
+  exclude = set(["_start", "__libc_csu_fini", "__libc_csu_init", "main",
                  "__data_start", "__dso_handle", "_IO_stdin_used",
-                 "_dl_relocate_static_pie", "__DTOR_END__", "__ashlsi3",
-                 "__ashldi3", "__ashlti3", "__ashrsi3", "__ashrdi3", "__ashrti3",
-                 "__divsi3", "__divdi3", "__divti3", "__lshrsi3", "__lshrdi3",
-                 "__lshrti3", "__modsi3", "__moddi3", "__modti3", "__mulsi3",
-                 "__muldi3", "__multi3", "__negdi2", "__negti2", "__udivsi3",
-                 "__udivdi3", "__udivti3", "__udivmoddi4", "__udivmodti4",
-                 "__umodsi3", "__umoddi3", "__umodti3", "__cmpdi2", "__cmpti2",
-                 "__ucmpdi2", "__ucmpti2", "__absvsi2", "__absvdi2", "__addvsi3",
-                 "__addvdi3", "__mulvsi3", "__mulvdi3", "__negvsi2", "__negvdi2",
-                 "__subvsi3", "__subvdi3", "__clzsi2", "__clzdi2", "__clzti2",
-                 "__ctzsi2", "__ctzdi2", "__ctzti2", "__ffsdi2", "__ffsti2",
-                 "__paritysi2", "__paritydi2", "__parityti2", "__popcountsi2",
-                 "__popcountdi2", "__popcountti2", "__bswapsi2", "__bswapdi2"])
+                 "_dl_relocate_static_pie"])
 
   exported_funcs = set()
   exported_vars = set()
@@ -1497,7 +1375,7 @@ def identify_program_entrypoints(func_eas):
         set_symbol_name(ea, name)
 
       if is_code(ea):
-        func_eas.append(ea)
+        func_eas.add(ea)
         if name not in exclude:
           exported_funcs.add(ea)
       else:
@@ -1531,8 +1409,8 @@ def find_main_in_ELF_file():
       return idc.BADADDR
 
   for begin_ea, end_ea in idautils.Chunks(start_ea):
-    for inst_ea in idautils.Heads(begin_ea, end_ea):
-      comment = ida_bytes.get_cmt(inst_ea, 0)
+    for inst_ea in Heads(begin_ea, end_ea):
+      comment = idc.GetCommentEx(inst_ea, 0)
       if comment and "main" in comment:
         for main_ea in xrefs_from(inst_ea):
           if not is_code(main_ea):
@@ -1563,20 +1441,13 @@ def recover_module(entrypoint, gvar_infile = None):
   M = CFG_pb2.Module()
   M.name = idc.get_root_filename().format('utf-8')
   DEBUG("Recovering module {}".format(M.name))
-  
-  entry_ea = idc.BADADDR
-  if args.entrypoint:
-    entry_ea = idc.get_name_ea_simple(args.entrypoint)
-    # If the entrypoint is `main`, then we'll try to find `main` via another
-    # means.
-    if is_invalid_ea(entry_ea):
-      if "main" == args.entrypoint and IS_ELF:
-        entry_ea = find_main_in_ELF_file()
 
-    if not is_invalid_ea(entry_ea):
-      DEBUG("Found {} at {:x}".format(args.entrypoint, entry_ea))
-      if not is_start_of_function(entry_ea):
-        try_mark_as_function(entry_ea)
+  entry_ea = idc.get_name_ea_simple(args.entrypoint)
+  # If the entrypoint is `main`, then we'll try to find `main` via another
+  # means.
+  if is_invalid_ea(entry_ea):
+    if "main" == args.entrypoint and IS_ELF:
+      entry_ea = find_main_in_ELF_file()
 
   if RECOVER_EHTABLE:
     recover_exception_table()
@@ -1593,19 +1464,13 @@ def recover_module(entrypoint, gvar_infile = None):
   exported_funcs, exported_vars = identify_program_entrypoints(func_eas)
 
   if is_invalid_ea(entry_ea):
-    if args.entrypoint:
-      DEBUG("ERROR: Could not find entrypoint {}".format(args.entrypoint))
+    DEBUG("ERROR: Could not find entrypoint {}".format(args.entrypoint))
   else:
-    func_eas.append(entry_ea)
+    func_eas.add(entry_ea)
     exported_funcs.add(entry_ea)
 
-  prev_F = None
-  processed_blocks = set()
-
-  func_eas.sort(reverse=True)
-
   # Process and recover functions. 
-  while len(func_eas):
+  while len(func_eas) > 0:
     func_ea = func_eas.pop()
     if func_ea in RECOVERED_EAS or func_ea in EXTERNAL_FUNCS_TO_RECOVER:
       continue
@@ -1623,10 +1488,8 @@ def recover_module(entrypoint, gvar_infile = None):
     if is_external_segment_by_flags(func_ea):
       continue
 
-    prev_F = recover_function(M, func_ea, func_eas, exported_funcs, prev_F, processed_blocks)
+    recover_function(M, func_ea, func_eas, exported_funcs)
     recovered_fns += 1
-
-  recover_deferred_preserved_regs(M)
 
   if recovered_fns == 0:
     DEBUG("COULD NOT RECOVER ANY FUNCTIONS")
@@ -1697,7 +1560,7 @@ if __name__ == "__main__":
   parser.add_argument(
       '--entrypoint',
       help="The entrypoint where disassembly should begin",
-      required=False)
+      required=True)
   
   parser.add_argument(
       '--recover-global-vars',
@@ -1717,26 +1580,13 @@ if __name__ == "__main__":
       default=False,
       help="Flag to enable the exception handler recovery")
 
-  parser.add_argument(
-      '--forced-extern-defs',
-      help='List of functions which are forced to be extern and dont need to be recovered',
-      default=None,
-      required=False)
-
-  parser.add_argument(
-      "--rebase",
-      help="Amount by which to rebase a binary",
-      default=0,
-      type=int,
-      required=False)
-
   args = parser.parse_args(args=idc.ARGV[1:])
 
   if args.log_file != os.devnull:
     INIT_DEBUG_FILE(args.log_file)
     DEBUG("Debugging is enabled.")
 
-  addr_size = {"x86": 32, "amd64": 64, "aarch64": 64, "sparc32": 32,  "sparc64": 64}.get(args.arch, 0)
+  addr_size = {"x86": 32, "amd64": 64, "aarch64": 64,}.get(args.arch, 0)                                            
   if addr_size != get_address_size_in_bits():
     DEBUG("Arch {} address size does not match IDA's available bitness {}! Did you mean to use idal64?".format(
         args.arch, get_address_size_in_bits()))
@@ -1748,7 +1598,7 @@ if __name__ == "__main__":
     PIE_MODE = True
     
   if args.recover_stack_vars:
-    DEBUG("Stack variable recovery is deprecated")
+    TO_RECOVER["stack_var"] = True
 
   if args.recover_exception:
     RECOVER_EHTABLE = True
@@ -1768,13 +1618,6 @@ if __name__ == "__main__":
       DEBUG("Loading Standard Definitions file: {0}".format(defsfile))
       parse_os_defs_file(df)
 
-  if args.forced_extern_defs:
-    defsfile_list = args.forced_extern_defs.split(',')
-    for defsfile in defsfile_list:
-      extern_defsfile = os.path.abspath(defsfile)
-      with open(extern_defsfile, 'r') as df:
-        parse_fextern_defs_file(df)   
-
   # Turn off "automatically make offset" heuristic, and set some
   # other sane defaults.
   idc.set_inf_attr(idc.INF_AF, 0xdfff)
@@ -1783,16 +1626,6 @@ if __name__ == "__main__":
   # Ensure that IDA is done processing
   DEBUG("Using Batch mode.")
   idaapi.auto_wait()
-
-  # Shift the program image in memory.
-  if args.rebase:
-    rebase_flags = idc.MSF_FIXONCE
-    if idc.MOVE_SEGM_OK != idc.rebase_program(args.rebase, rebase_flags):
-      DEBUG("ERROR: Failed to rebase program with delta {:08x}".format(args.rebase))
-
-    idaapi.auto_wait()
-
-  ANVILL_PROGRAM = anvill.get_program()
 
   DEBUG("Starting analysis")
   try:
