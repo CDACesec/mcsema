@@ -27,7 +27,7 @@ import textwrap
 SUPPORTED_OS = ('linux', 'windows',)
 SUPPORTED_ARCH = ('x86', 'x86_avx', 'x86_avx512',
                   'amd64', 'amd64_avx', 'amd64_avx512',
-                  'aarch64',)                                     
+                  'aarch64', "mipsl")                                     
 
 # Make sure we can do an `import binaryninja`.
 def _find_binary_ninja(path_to_binaryninja):
@@ -70,7 +70,7 @@ def main():
 
   arg_parser.add_argument(
       '--arch',
-      help='Name of the architecture. Valid names are x86, amd64, and aarch64.',              
+      help='Name of the architecture. Valid names are x86, amd64, mipsl and aarch64.',              
       choices=SUPPORTED_ARCH,
       required=True)
 
