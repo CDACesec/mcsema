@@ -20,8 +20,8 @@ endif ()
 
 # Create the runtimes
 set(mips_clang /usr/bin/clang++-4.0)
-set(MCSMEMA_RT32 mipsel_runtime)
-
+set(MCSEMA_RT32 lib_mipsel.a)
+set(install_folder "${CMAKE_INSTALL_PREFIX}")
   
 
 # Linux and friends
@@ -59,13 +59,6 @@ add_custom_command(
     COMMENT "Generating runtime assembly file"
     )
 
-# uncomment if you wish to install the library in
-# the install prefix folder [not tested]
-#  install(
-#    TARGETS ${MCSMEMA_RT32}
-#    ARCHIVE DESTINATION "${install_folder}/lib"
-#  )
- 
 set(incl /usr/mipsel-linux-gnu)
 
 add_custom_command(
@@ -91,3 +84,9 @@ add_custom_command(
     DEPENDS asm.o 
     COMMENT "creating library archive"
     )
+
+# install our custom target in the destination location
+install(
+	FILES ${CMAKE_CURRENT_BINARY_DIR}/${MCSEMA_RT32}
+	DESTINATION "${install_folder}/lib"
+)  
