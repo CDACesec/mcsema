@@ -4,7 +4,7 @@ This fork contains support for MIPS32 architrecture in [mcsema](https://github.c
 
 Notes: 
 
-- To recover individual hardware instructions, we switch off IDA-Pro's capability to combine instructions to improve readability(Macro instruction(Assembler idioms or Pseudo instructions). To have that change, use [ida.cfg](scripts/ida.cfg) provided in this repo. This is the configuration file for IDA-Pro with the required changes.
+- To recover individual hardware instructions, we switch off IDA-Pro's capability to combine instructions to improve readability(Macro instructions/Assembler idioms or Pseudo instructions). To have that change, use [ida.cfg](scripts/ida.cfg) provided in this repo. This is the configuration file for IDA-Pro with the required changes.
 Paste this in `/path/to/ida-installation/cfg/`
 Without the ida.cfg file, the code is not guranteed to work.
 
