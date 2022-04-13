@@ -12,6 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * 
+ * Reviewed and Modified for use by Centre for Development of Advanced Computing (C-DAC)
  */
 
 #include <cstdio>
@@ -27,7 +29,7 @@
 #pragma clang diagnostic ignored "-Wformat" /* disables diagnostic msgs for "-Wformat" */
 
 static const size_t kStackSize = 1UL << 20UL; /* 64 Kib */ /* UL = unsigned long */
-static const size_t kFrameSize = 6400UL; /* assumed 64 kb to be frame size in mips */ //[verify the value]
+static const size_t kFrameSize = 6400UL; /* assumed 64 kb to be frame size in mips */
 
 
 int main(void) {
@@ -44,7 +46,6 @@ int main(void) {
   fprintf(out, "  .type __mcsema_reg_state,@object\n");
   fprintf(out, "  .section .tbss,\"awT\",@nobits\n");
   fprintf(out, "  .align 16\n"); /* Arch State is aligned as 16 */
-  //fprintf(out, "  .align 4\n");
   fprintf(out, "__mcsema_reg_state:\n");
   
   fprintf(out, "  .zero %" PRIuMAX "\n", sizeof(State));
@@ -144,7 +145,7 @@ int main(void) {
   fprintf(out, "  addiu $t0, $t0, %%tprel_lo(__mcsema_stack)\n");
   fprintf(out, "  addu $t0, $t0, $t1\n");
 
-  // add the stack size to the base addr of mcsema_stack@tls, because the stack grows downwards???  
+  // add the stack size to the base addr of mcsema_stack@tls, because the stack grows downwards
   fprintf(out, "  li $a0, %" PRIuMAX "\n", (kStackSize));
   fprintf(out, "  addu $t0, $t0, $a0\n" );
 
@@ -176,8 +177,6 @@ int main(void) {
 
 
   // Implements `__mcsema_detach_ret`. This goes from lifted code into native code.
-  // The native code pointer is located at the native `[State::RSP - 8][x86_64]`[ unverified location ]
-  // address.
   fprintf(out, ".ent __mcsema_detach_ret\n");
   fprintf(out, "  .type __mcsema_detach_ret,@function\n");
   fprintf(out, "__mcsema_detach_ret:\n");
@@ -410,7 +409,6 @@ int main(void) {
   fprintf(out, "  .type __mcsema_get_type_index,@function\n");
   fprintf(out, "__mcsema_get_type_index:\n");
   fprintf(out, "  .cfi_startproc\n");
-  //fprintf(out, "  mov gs:[__mcsema_reg_state@TPOFF + %" PRIuMAX "], eax\n", __builtin_offsetof(State, EAX));
   fprintf(out, "  la $t1, __mcsema_reg_state\n");
   fprintf(out, "  addi $t1, $t1,%" PRIuMAX "\n", __builtin_offsetof(State,RAX));
   fprintf(out, "  sw $t1, ($s0)\n");

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Reviewed and Modified for use by Centre for Development of Advanced Computing (C-DAC)
+
 project(mcsema)
 cmake_minimum_required(VERSION 3.2)
 

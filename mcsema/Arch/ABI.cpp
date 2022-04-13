@@ -12,6 +12,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * 
+ * Reviewed and Modified for use by Centre for Development of Advanced Computing (C-DAC)
+ * 
  */
 
 #include <glog/logging.h>
@@ -517,7 +520,7 @@ static uint64_t DefaultUsedStackBytes(llvm::CallingConv::ID cc) {
       return 4;  // Size of return address on the stack.
 
     default:
-      return 0; /* confirm this for mips32 */
+      return 0;
   }
 }
 
@@ -843,8 +846,6 @@ llvm::Value *CallingConvention::LoadNextArgument(llvm::BasicBlock *block,
     auto alloc_struct = ir.CreateAlloca(target_type);
     for (unsigned i = 0; i < underlying_values.size(); ++i) {
       llvm::Value *offsets[] = {GetConstantInt(64, 0), GetConstantInt(64, i)};
-      LOG(INFO)
-          <<"inside the alloc_struct :";                                 // changes added
       auto gep = ir.CreateGEP(alloc_struct, offsets);
       ir.CreateStore(underlying_values[i], gep);
     }

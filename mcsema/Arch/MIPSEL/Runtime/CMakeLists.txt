@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# Reviewed and Modified for use by Centre for Development of Advanced Computing (C-DAC)
+
 set(CMAKE_BC_COMPILER /usr/bin/clang++-4.0)
 enable_language(ASM)
 
